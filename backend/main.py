@@ -840,12 +840,85 @@ async def delete_task(task_id: str):
 
 @app.post("/api/download-video/formats")
 async def get_video_formats(url: str = Form(...)):
-    """获取视频的可用格式列表"""
+    """获取视频的可用格式列表（含视频、音频、字幕）"""
     try:
-        formats = await video_processor.get_video_formats(url)
-        return {"formats": formats}
+        result = await video_processor.get_video_formats(url)
+        return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/download-audio")
+async def start_download_audio(
+    url: str = Form(...),
+    format_id: str = Form(default="bestaudio/best"),
+    filename: str = Form(default=""),
+    audio_format: str = Form(default="m4a"),
+):
+    """开始下载音频（仅音频，不转录）"""
+    try:
+        if not url.strip():
+            raise HTTPException(status_code=400, detail="请提供视频URL")
+
+        task_id = str(uuid.uuid4())
+        tasks[task_id] = {
+            "status": "processing",
+            "progress": 0,
+            "message": "准备下载音频...",
+            "url": url,
+            "type": "download_audio",
+        }
+        _init_task_stages(task_id, "download_only")
+        save_tasks(tasks)
+
+        task = asyncio.create_task(
+            _run_download_audio_task(task_id, url, format_id, filename, audio_format)
+        )
+        active_download_tasks[task_id] = task
+
+        return {"task_id": task_id, "message": "音频下载任务已创建"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建音频下载任务失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/download-subtitles")
+async def start_download_subtitles(
+    url: str = Form(...),
+    lang: str = Form(default="en"),
+    filename: str = Form(default=""),
+):
+    """开始下载字幕文件"""
+    try:
+        if not url.strip():
+            raise HTTPException(status_code=400, detail="请提供视频URL")
+
+        task_id = str(uuid.uuid4())
+        tasks[task_id] = {
+            "status": "processing",
+            "progress": 0,
+            "message": "准备下载字幕...",
+            "url": url,
+            "type": "download_subtitles",
+        }
+        _init_task_stages(task_id, "download_only")
+        save_tasks(tasks)
+
+        task = asyncio.create_task(
+            _run_download_subtitles_task(task_id, url, lang, filename)
+        )
+        active_download_tasks[task_id] = task
+
+        return {"task_id": task_id, "message": "字幕下载任务已创建"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建字幕下载任务失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/download-video")
@@ -916,6 +989,93 @@ async def _run_download_video_task(
 
     except Exception as e:
         logger.error(f"下载任务 {task_id} 失败: {e}")
+        tasks[task_id].update({
+            "status": "error",
+            "error": str(e),
+            "message": f"下载失败: {str(e)}",
+        })
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+    finally:
+        if task_id in active_download_tasks:
+            del active_download_tasks[task_id]
+
+
+async def _run_download_audio_task(
+    task_id: str, url: str, format_id: str, filename: str, audio_format: str
+):
+    """执行音频下载任务"""
+    try:
+        await _broadcast_stage(task_id, 0, 50)
+
+        video_title = await video_processor.get_video_title(url)
+        await _broadcast_stage(task_id, 0, 100)
+
+        await _broadcast_stage(task_id, 1, 10)
+
+        output_path = await video_processor.download_audio_only(
+            url, TEMP_DIR, format_id, filename or video_title, audio_format
+        )
+
+        await _broadcast_stage(task_id, 1, 100)
+
+        tasks[task_id].update({
+            "status": "completed",
+            "progress": 100,
+            "message": "音频下载完成！",
+            "video_title": video_title,
+            "output_path": str(output_path),
+            "filename": Path(output_path).name,
+        })
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+    except Exception as e:
+        logger.error(f"音频下载任务 {task_id} 失败: {e}")
+        tasks[task_id].update({
+            "status": "error",
+            "error": str(e),
+            "message": f"下载失败: {str(e)}",
+        })
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+    finally:
+        if task_id in active_download_tasks:
+            del active_download_tasks[task_id]
+
+
+async def _run_download_subtitles_task(
+    task_id: str, url: str, lang: str, filename: str
+):
+    """执行字幕下载任务"""
+    try:
+        await _broadcast_stage(task_id, 0, 50)
+
+        video_title = await video_processor.get_video_title(url)
+        await _broadcast_stage(task_id, 0, 100)
+
+        await _broadcast_stage(task_id, 1, 10)
+
+        output_path, chosen_lang = await video_processor.download_subtitles_file(
+            url, TEMP_DIR, lang, filename or video_title
+        )
+
+        await _broadcast_stage(task_id, 1, 100)
+
+        tasks[task_id].update({
+            "status": "completed",
+            "progress": 100,
+            "message": f"字幕下载完成！（{chosen_lang}）",
+            "video_title": video_title,
+            "output_path": str(output_path),
+            "filename": Path(output_path).name,
+            "subtitle_lang": chosen_lang,
+        })
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+    except Exception as e:
+        logger.error(f"字幕下载任务 {task_id} 失败: {e}")
         tasks[task_id].update({
             "status": "error",
             "error": str(e),
