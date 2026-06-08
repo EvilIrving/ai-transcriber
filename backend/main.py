@@ -256,10 +256,9 @@ async def _run_post_extract_pipeline(
     # ── 阶段：阅读内容 (stage_offset) ──────────────────────────
     await _broadcast_stage(task_id, stage_offset, 50)
 
-    script = await request_summarizer.optimize_transcript(raw_script)
-    script_with_title = f"# {video_title}\n\n{script}\n\nsource: {source_ref}\n"
-
-    await _broadcast_stage(task_id, stage_offset, 100)
+    # 摘要不再等待完整 Transcript 优化。长访谈中，Transcript 优化可能会分成很多块；
+    # 摘要只需要轻清理后的原始内容，并直接按 summary_language 输出。
+    summary_source = request_summarizer._remove_timestamps_and_meta(raw_script)
 
     detected_language = transcriber.get_detected_language(raw_script)
     detected_language = (detected_language or "").strip()
@@ -268,70 +267,51 @@ async def _run_post_extract_pipeline(
     detected_language = translator.normalize_lang_code(detected_language) or detected_language
 
     logger.info(f"检测到的语言: {detected_language}, 摘要语言: {summary_language}")
-
-    translation_content = None
-    translation_filename = None
-    translation_path = None
-
-    eff_key = (api_key or "").strip()
-    eff_base = (model_base_url or "").strip().rstrip("/")
-    if eff_key:
-        request_translator = Translator(
-            api_key=eff_key,
-            base_url=eff_base or None,
-            model=model_id or None,
-        )
-    else:
-        request_translator = translator
-
-    need_translation = translator.languages_differ_for_translation(
-        detected_language, summary_language
+    logger.info(
+        f"跳过全文翻译: detected_language={detected_language}, summary_language={summary_language}"
     )
+    logger.info("并行启动: Transcript 优化 + 摘要生成；摘要输入使用轻清理 raw transcript")
 
-    if need_translation:
-        logger.info(f"需要翻译: {detected_language} -> {summary_language}")
-        # 翻译阶段嵌入在 阅读内容 和 生成summary prompt 之间
-        translation_content = await request_translator.translate_text(
-            script, summary_language, detected_language
-        )
-        translation_with_title = f"# {video_title}\n\n{translation_content}\n\nsource: {source_ref}\n"
-        translation_filename = f"translation_{safe_title}_{short_id}.md"
-        translation_path = TEMP_DIR / translation_filename
-        async with aiofiles.open(translation_path, "w", encoding="utf-8") as f:
-            await f.write(translation_with_title)
-    else:
-        logger.info(
-            f"不需要翻译: detected_language={detected_language}, summary_language={summary_language}"
-        )
+    async def _run_async_in_thread(coro_factory):
+        """Run blocking async LLM helpers in a worker thread so two branches can overlap."""
+        return await asyncio.to_thread(lambda: asyncio.run(coro_factory()))
+
+    optimize_task = asyncio.create_task(
+        _run_async_in_thread(lambda: request_summarizer.optimize_transcript(raw_script))
+    )
 
     # ── 阶段：生成摘要prompt + 生成摘要 ────────────────────────
     summary_prompt_content = ""
 
     if use_two_step:
-        # 双步摘要
+        summary_task = asyncio.create_task(
+            _run_async_in_thread(
+                lambda: request_summarizer.summary_two_step(
+                    summary_source, summary_language, video_title
+                )
+            )
+        )
+        await _broadcast_stage(task_id, stage_offset, 100)
         await _broadcast_stage(task_id, stage_offset + 1, 30)
 
-        two_step_result = await request_summarizer.summary_two_step(
-            script, summary_language, video_title
-        )
+        two_step_result = await summary_task
         summary = two_step_result["summary"]
         summary_prompt_content = two_step_result.get("prompt", "")
-
-        await _broadcast_stage(task_id, stage_offset + 2, 100)
     else:
-        # 单步摘要（兼容旧模式）
+        summary_task = asyncio.create_task(
+            _run_async_in_thread(
+                lambda: request_summarizer.summarize(
+                    summary_source, summary_language, video_title
+                )
+            )
+        )
+        await _broadcast_stage(task_id, stage_offset, 100)
         await _broadcast_stage(task_id, stage_offset + 2, 50)
-        summary = await request_summarizer.summarize(script, summary_language, video_title)
+
+        summary = await summary_task
         summary_prompt_content = "(单步固定prompt模式)"
-        await _broadcast_stage(task_id, stage_offset + 2, 100)
 
     summary_with_source = summary + f"\n\nsource: {source_ref}\n"
-
-    # ── 保存文件 ────────────────────────────────────────────
-    script_filename = f"transcript_{safe_title}_{short_id}.md"
-    script_path = TEMP_DIR / script_filename
-    async with aiofiles.open(script_path, "w", encoding="utf-8") as f:
-        await f.write(script_with_title)
 
     summary_filename = f"summary_{safe_title}_{short_id}.md"
     summary_path = TEMP_DIR / summary_filename
@@ -343,6 +323,36 @@ async def _run_post_extract_pipeline(
     prompt_path = TEMP_DIR / prompt_filename
     async with aiofiles.open(prompt_path, "w", encoding="utf-8") as f:
         await f.write(f"# 摘要Prompt\n\n{summary_prompt_content}\n")
+
+    tasks[task_id].update({
+        "status": "processing",
+        "message": "摘要已生成，Transcript 正在后台优化...",
+        "summary": summary_with_source,
+        "summary_prompt_file": prompt_filename,
+        "summary_path": str(summary_path),
+        "video_title": video_title,
+        "short_id": short_id,
+        "safe_title": safe_title,
+        "detected_language": detected_language,
+        "summary_language": summary_language,
+    })
+    await _broadcast_stage(task_id, stage_offset + 2, 90)
+    tasks[task_id].update({"message": "摘要已生成，Transcript 正在后台优化..."})
+    save_tasks(tasks)
+    await broadcast_task_update(task_id, tasks[task_id])
+
+    if not optimize_task.done():
+        logger.info("摘要已完成，等待后台 Transcript 优化完成")
+    script = await optimize_task
+    script_with_title = f"# {video_title}\n\n{script}\n\nsource: {source_ref}\n"
+
+    await _broadcast_stage(task_id, stage_offset + 2, 100)
+
+    # ── 保存文件 ────────────────────────────────────────────
+    script_filename = f"transcript_{safe_title}_{short_id}.md"
+    script_path = TEMP_DIR / script_filename
+    async with aiofiles.open(script_path, "w", encoding="utf-8") as f:
+        await f.write(script_with_title)
 
     task_result = {
         "status": "completed",
@@ -359,13 +369,6 @@ async def _run_post_extract_pipeline(
         "detected_language": detected_language,
         "summary_language": summary_language,
     }
-
-    if translation_content and translation_path:
-        task_result.update({
-            "translation": translation_with_title,
-            "translation_path": str(translation_path),
-            "translation_filename": translation_filename,
-        })
 
     tasks[task_id].update(task_result)
     save_tasks(tasks)

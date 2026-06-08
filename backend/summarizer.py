@@ -1009,8 +1009,9 @@ Core requirements:
             # ── 第一步：阅读内容，生成定制化摘要Prompt ──────────────────────
             logger.info(f"双步摘要 Step 1: 生成定制化摘要Prompt ({language_name})")
 
-            # 截断过长的内容用于生成prompt（内容阅读用前15000字符即可捕捉风格）
-            preview = transcript[:15000] if len(transcript) > 15000 else transcript
+            # Step 1 用于分析内容类型与摘要策略。5万字符以内不截断；超过则取前5万字符。
+            preview_limit = 50000
+            preview = transcript[:preview_limit] if len(transcript) > preview_limit else transcript
 
             step1_system = f"""你是一个精通内容提炼的编辑专家。你的任务是**阅读以下内容，然后为该内容专门设计一套最佳的摘要生成指令（Prompt）**。
 
@@ -1048,28 +1049,21 @@ Core requirements:
             # ── 第二步：基于定制化Prompt生成最终摘要 ──────────────────────
             logger.info(f"双步摘要 Step 2: 基于定制Prompt生成摘要")
 
-            # 截断原文用于摘要（确保跟单步模式一致）
-            transcript_for_summary = transcript[:12000] if len(transcript) > 12000 else transcript
+            # 摘要阶段使用完整输入。大上下文模型可以直接阅读长访谈；
+            # streaming 只影响返回方式，不影响这里的上下文容量。
+            transcript_for_summary = transcript
 
-            step2_system = f"""你是专业的摘要撰写专家。请严格按照以下定制化指令来生成摘要。
-
-输出语言：{language_name}
+            step2_system = f"""{custom_prompt}
 
 硬性规则：
-- 字数：约280-650词（{language_name}），源内容短时取下限
+- 输出语言：{language_name}
 - 不要复述完整原文，不要写长篇逐句重写
 - 不要加前言（"Here is..."）、不要加尾注（客套话、"如需调整请告诉我"等）
-- Markdown格式：段落间空行分隔；可选用 `## 核心要点` 小标题"""
+- Markdown格式：段落间空行分隔；可选用小标题"""
 
-            step2_user = f"""以下是对你的摘要定制要求：
+            step2_user = f"""请根据系统提示词，直接总结以下原文内容：
 
-【定制化摘要指令】
-{custom_prompt}
-
-【待摘要的内容】
-{transcript_for_summary}
-
-请严格按照定制化指令生成摘要（{language_name}）："""
+{transcript_for_summary}"""
 
             resp2 = self.client.chat.completions.create(
                 model=self.advanced_model,
