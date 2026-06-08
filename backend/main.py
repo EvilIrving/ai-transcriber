@@ -109,7 +109,8 @@ active_download_tasks = {}
 sse_connections = {}
 
 # ── 阶段权重定义 ──────────────────────────────────────────────
-# 每种任务类型的阶段列表，顺序执行，权重之和=100
+# 每种任务类型的阶段列表，顺序执行。
+# weight 是相对权重，最终总进度会按该任务所有阶段权重归一化到 0–100%。
 STAGE_WEIGHTS = {
     "url_summary": [
         ("识别来源", 5, "正在识别链接"),
@@ -179,16 +180,22 @@ def _set_task_stage(task_id: str, stage_index: int, stage_progress: float = 0):
     if not stages or stage_index >= len(stages):
         return
 
-    completed = sum(s["weight"] for s in stages[:stage_index])
+    stage_progress = max(0.0, min(100.0, float(stage_progress or 0)))
+    total_weight = sum(s["weight"] for s in stages)
+    if total_weight <= 0:
+        return
+
+    completed_units = sum(s["weight"] for s in stages[:stage_index])
     current_weight = stages[stage_index]["weight"]
-    total = completed + current_weight * (stage_progress / 100.0)
+    total_units = completed_units + current_weight * (stage_progress / 100.0)
+    total = total_units / total_weight * 100.0
 
     tasks[task_id].update({
         "current_stage": stages[stage_index]["name"],
         "current_stage_label": stages[stage_index]["label"],
         "current_stage_progress": round(stage_progress, 1),
         "current_stage_index": stage_index,
-        "completed_weight": completed,
+        "completed_weight": round(completed_units / total_weight * 100.0, 1),
         "progress": round(total, 1),
         "message": stages[stage_index]["label"],
     })
@@ -831,6 +838,7 @@ async def delete_task(task_id: str):
         processing_urls.discard(task_url)
 
     del tasks[task_id]
+    save_tasks(tasks)
     return {"message": "任务已取消并删除"}
 
 
