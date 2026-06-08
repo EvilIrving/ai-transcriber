@@ -73,9 +73,8 @@ class RSSReader:
                 raise ValueError(f"HTTP {resp.status}")
             return resp.read().decode("utf-8", errors="replace")
 
-    # ── 添加订阅 ──────────────────────────────────────────────
-    async def add_feed(self, feed_url: str) -> dict:
-        """首次添加 RSS/Atom 订阅，抓取后存入。"""
+    async def fetch_feed(self, feed_url: str) -> dict:
+        """抓取并解析 RSS/Atom，但不写入服务器持久化。"""
         feed_url = feed_url.strip()
         parsed = urlparse(feed_url)
         if not parsed.scheme or not parsed.netloc:
@@ -86,11 +85,9 @@ class RSSReader:
             self._parse_feed, content
         )
 
-        feed_id = _stable_id(feed_url)
         now = datetime.now(timezone.utc).isoformat()
-
-        self._feeds[feed_id] = {
-            "id": feed_id,
+        return {
+            "id": _stable_id(feed_url),
             "url": feed_url,
             "title": title or parsed.netloc,
             "type": feed_type,
@@ -99,9 +96,15 @@ class RSSReader:
             "last_error": None,
             "entries": entries,
         }
+
+    # ── 添加订阅 ──────────────────────────────────────────────
+    async def add_feed(self, feed_url: str) -> dict:
+        """首次添加 RSS/Atom 订阅，抓取后存入。"""
+        feed = await self.fetch_feed(feed_url)
+        self._feeds[feed["id"]] = feed
         self._save()
-        logger.info(f"RSS订阅已添加: {title} ({feed_url})")
-        return self._feeds[feed_id]
+        logger.info(f"RSS订阅已添加: {feed['title']} ({feed['url']})")
+        return feed
 
     # ── 刷新订阅（增量更新）───────────────────────────────────
     async def refresh_feed(self, feed_id: str) -> dict:

@@ -1116,9 +1116,19 @@ async def download_video_file(filename: str):
 # RSS 订阅 API
 # ═══════════════════════════════════════════════════════════════
 
+@app.post("/api/rss/parse")
+async def parse_rss_feed(feed_url: str = Form(...)):
+    """抓取并解析 RSS/Atom。订阅数据由前端保存，不写入服务器。"""
+    try:
+        feed_info = await rss_reader.fetch_feed(feed_url)
+        return {"feed": feed_info}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.post("/api/rss/subscribe")
 async def subscribe_rss_feed(feed_url: str = Form(...)):
-    """添加RSS订阅"""
+    """添加RSS订阅（兼容旧接口：服务器 JSON 持久化）"""
     try:
         feed_info = await rss_reader.add_feed(feed_url)
         return {"feed": feed_info}
@@ -1155,10 +1165,18 @@ async def create_rss_task(
     api_key: str = Form(default=""),
     model_base_url: str = Form(default=""),
     model_id: str = Form(default=""),
+    entry_json: str = Form(default=""),
 ):
-    """从RSS条目创建任务（摘要或下载）"""
+    """从RSS条目创建任务（摘要或下载）。支持前端本地订阅传入 entry_json。"""
     try:
-        entry = rss_reader.get_entry_by_id(feed_id, entry_id)
+        entry = None
+        if entry_json:
+            try:
+                entry = json.loads(entry_json)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="无效的RSS条目数据")
+        else:
+            entry = rss_reader.get_entry_by_id(feed_id, entry_id)
         if not entry:
             raise HTTPException(status_code=404, detail="条目不存在")
 
