@@ -42,6 +42,9 @@ class VideoProcessor:
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
+            'socket_timeout': 10,        # 默认 20s 太慢
+            'extractor_retries': 1,       # 减少重试延迟
+            'retries': 1,
             **self._cookies_opts,
         }
         if extra:
@@ -64,21 +67,17 @@ class VideoProcessor:
         # 2) 环境变量指定浏览器
         browser = os.getenv("COOKIES_BROWSER", "").strip().lower()
         if browser:
-            try:
-                # 验证浏览器是否可用（yt-dlp 会自行处理路径）
-                self._cookies_opts['cookiesfrombrowser'] = (browser, None, None, None)
-                self.ydl_opts['cookiesfrombrowser'] = (browser, None, None, None)
-                logger.info(f"使用浏览器 cookies: {browser}")
-                return
-            except Exception as e:
-                logger.warning(f"无法从 {browser} 提取 cookies: {e}")
+            self._cookies_opts['cookiesfrombrowser'] = (browser,)
+            self.ydl_opts['cookiesfrombrowser'] = (browser,)
+            logger.info(f"使用浏览器 cookies: {browser}")
+            return
 
         # 3) 自动检测 macOS 上可用的浏览器
         if not self._cookies_opts:
             detected = self._detect_browser_cookies()
             if detected:
-                self._cookies_opts['cookiesfrombrowser'] = (detected, None, None, None)
-                self.ydl_opts['cookiesfrombrowser'] = (detected, None, None, None)
+                self._cookies_opts['cookiesfrombrowser'] = (detected,)
+                self.ydl_opts['cookiesfrombrowser'] = (detected,)
                 logger.info(f"自动检测浏览器 cookies: {detected}")
                 return
 
