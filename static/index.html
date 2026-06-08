@@ -239,6 +239,10 @@
     .fmt-item .fmt-size { font-size: 12px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
     .dwn-empty { text-align: center; padding: 30px 20px; color: var(--text-dim); font-size: 14px; }
     .dwn-loading { text-align: center; padding: 30px 20px; color: var(--text-muted); }
+    /* Download tabs */
+    .dwn-tab-btn { transition: color .2s, border-color .2s; }
+    .dwn-tab-btn:hover { color: var(--accent-text); }
+    .dwn-tab-pane { }
     /* RSS page */
     .rss-add-row { display: flex; gap: 10px; margin-bottom: 20px; }
     .rss-add-row .url-input { flex: 1; }
@@ -300,9 +304,8 @@
 <body>
 
 <nav class="navbar">
-  <a class="nav-logo" href="https://sipsip.ai" target="_blank" rel="noopener noreferrer">
-    <img src="/static/sipsip.png" alt="sipsip logo">
-    <span class="nav-logo-text">sipsip<em>.ai</em></span>
+  <a class="nav-logo" href="/">
+    <span class="nav-logo-text">AI<em>Transcriber</em></span>
   </a>
   <div class="nav-actions">
     <button id="themeToggle" class="icon-btn" title="Toggle theme">
@@ -471,7 +474,7 @@
       </div>
     </div>
     <div class="footer">
-      <p data-i18n="footer_text">This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators</p>
+      <p data-i18n="footer_text">Forked from <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank" style="color:var(--accent-text);text-decoration:none;">AI-Video-Transcriber</a> by Wendy</p>
     </div>
   </div>
 
@@ -498,11 +501,60 @@
     </div>
 
     <div id="dwnFormats" style="display:none;">
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">Select format:</p>
-      <div class="fmt-list" id="dwnFmtList"></div>
-      <button id="dwnStartBtn" class="btn-go" style="width:100%;justify-content:center;">
-        <i class="fas fa-download"></i> <span>Start Download</span>
-      </button>
+      <div class="dwn-tabs" style="display:flex;border-bottom:1px solid var(--border);margin-bottom:12px;">
+        <button class="dwn-tab-btn active" data-dwntab="video" style="background:none;border:none;border-bottom:2px solid var(--accent);color:var(--accent-text);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;">🎬 视频</button>
+        <button class="dwn-tab-btn" data-dwntab="audio" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;">🎵 音频</button>
+        <button class="dwn-tab-btn" data-dwntab="subtitle" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;">📝 字幕</button>
+      </div>
+      <!-- Video tab -->
+      <div class="dwn-tab-pane active" id="dwnTabVideo">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">选择清晰度：</p>
+        <div class="fmt-list" id="dwnFmtList"></div>
+        <div style="margin-top:8px;">
+          <label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+            <span>输出格式：</span>
+            <select id="dwnVideoContainer" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;">
+              <option value="mp4">mp4</option>
+              <option value="mkv">mkv</option>
+              <option value="webm">webm</option>
+            </select>
+          </label>
+        </div>
+        <button id="dwnStartVideoBtn" class="btn-go" style="width:100%;justify-content:center;margin-top:12px;">
+          <i class="fas fa-download"></i> <span>下载视频</span>
+        </button>
+      </div>
+      <!-- Audio tab -->
+      <div class="dwn-tab-pane" id="dwnTabAudio" style="display:none;">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">选择音质：</p>
+        <div class="fmt-list" id="dwnAudioFmtList"></div>
+        <div style="margin-top:8px;">
+          <label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+            <span>输出格式：</span>
+            <select id="dwnAudioContainer" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;">
+              <option value="m4a">m4a (AAC)</option>
+              <option value="mp3">mp3</option>
+              <option value="opus">opus</option>
+              <option value="flac">flac</option>
+              <option value="wav">wav</option>
+            </select>
+          </label>
+        </div>
+        <button id="dwnStartAudioBtn" class="btn-go" style="width:100%;justify-content:center;margin-top:12px;">
+          <i class="fas fa-download"></i> <span>下载音频</span>
+        </button>
+      </div>
+      <!-- Subtitle tab -->
+      <div class="dwn-tab-pane" id="dwnTabSubtitle" style="display:none;">
+        <div id="dwnSubInfo" style="font-size:13px;color:var(--text-muted);margin-bottom:10px;"></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <label style="font-size:12px;color:var(--text-dim);">字幕语言：</label>
+          <select id="dwnSubLang" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;flex:1;"></select>
+        </div>
+        <button id="dwnStartSubBtn" class="btn-go" style="width:100%;justify-content:center;">
+          <i class="fas fa-download"></i> <span>下载字幕</span>
+        </button>
+      </div>
     </div>
 
     <div class="progress-panel" id="dwnProgressPanel">

@@ -33,7 +33,7 @@ class VideoTranscriber {
         preparing: 'Preparing…', transcript_text: 'Transcript', intelligent_summary: 'AI Summary',
         translation: 'Translation', download_transcript: 'Transcript', download_translation: 'Translation',
         download_summary: 'Summary', empty_hint: 'Paste a video URL or drop a file above and let AI do the heavy lifting.',
-        footer_text: 'This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators',
+        footer_text: 'Forked from <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank" style="color:var(--accent-text);text-decoration:none;">AI-Video-Transcriber</a> by Wendy',
         processing: 'Processing…', downloading_video: 'Downloading audio…', parsing_video: 'Parsing video info…',
         transcribing_audio: 'Transcribing audio…', optimizing_transcript: 'Optimizing transcript…',
         generating_summary: 'Generating summary…', detecting_subtitles: 'Detecting subtitles…',
@@ -57,7 +57,7 @@ class VideoTranscriber {
         intelligent_summary: '智能摘要', translation: '翻译', download_transcript: '转录',
         download_translation: '翻译', download_summary: '摘要',
         empty_hint: '在上方粘贴视频链接或拖放文件，让 AI 来处理一切。',
-        footer_text: '本工具是 <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> 的一部分 — 提取任何内容要点并构建你自己的知识库。',
+        footer_text: '基于 <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank" style="color:var(--accent-text);text-decoration:none;">AI-Video-Transcriber</a> (Wendy) 修改而来',
         processing: '处理中…', downloading_video: '正在下载音频…', parsing_video: '正在解析视频信息…',
         transcribing_audio: '正在转录音频…', optimizing_transcript: '正在优化转录文本…',
         generating_summary: '正在生成摘要…', detecting_subtitles: '正在检测字幕…',
@@ -139,7 +139,17 @@ class VideoTranscriber {
     this.dwnDetectBtn       = document.getElementById('dwnDetectBtn');
     this.dwnFormatsDiv      = document.getElementById('dwnFormats');
     this.dwnFmtList         = document.getElementById('dwnFmtList');
+    this.dwnAudioFmtList    = document.getElementById('dwnAudioFmtList');
+    this.dwnSubInfo         = document.getElementById('dwnSubInfo');
+    this.dwnSubLang         = document.getElementById('dwnSubLang');
+    this.dwnVideoContainer  = document.getElementById('dwnVideoContainer');
+    this.dwnAudioContainer  = document.getElementById('dwnAudioContainer');
+    this.dwnStartVideoBtn   = document.getElementById('dwnStartVideoBtn');
+    this.dwnStartAudioBtn   = document.getElementById('dwnStartAudioBtn');
+    this.dwnStartSubBtn     = document.getElementById('dwnStartSubBtn');
     this.dwnStartBtn        = document.getElementById('dwnStartBtn');
+    this.dwnTabBtns         = document.querySelectorAll('.dwn-tab-btn');
+    this.dwnTabPanes        = document.querySelectorAll('.dwn-tab-pane');
     this.dwnProgressPanel   = document.getElementById('dwnProgressPanel');
     this.dwnProgressStatus  = document.getElementById('dwnProgressStatus');
     this.dwnProgressFill    = document.getElementById('dwnProgressFill');
@@ -222,7 +232,15 @@ class VideoTranscriber {
     this.tabNavBtns.forEach(btn => { btn.addEventListener('click', () => this._switchPage(btn.dataset.page)); });
     // Download page
     this.dwnDetectBtn.addEventListener('click', () => this._dwnDetectFormats());
-    this.dwnStartBtn.addEventListener('click', () => this._dwnStartDownload());
+    this.dwnStartVideoBtn.addEventListener('click', () => this._dwnStartDownload('video'));
+    this.dwnStartAudioBtn.addEventListener('click', () => this._dwnStartDownload('audio'));
+    this.dwnStartSubBtn.addEventListener('click', () => this._dwnStartDownload('subtitle'));
+    // Download tab switching
+    this.dwnTabBtns.forEach(btn => {
+      btn.addEventListener('click', () => this._switchDwnTab(btn.dataset.dwntab));
+    });
+    // Enter key on URL input
+    this.dwnUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._dwnDetectFormats(); });
     // RSS page
     this.rssAddBtn.addEventListener('click', () => this._rssSubscribe());
     this.rssFeedUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._rssSubscribe(); });
@@ -605,6 +623,18 @@ class VideoTranscriber {
   /* ═══════════════════════════════════════════════════════════
      Download-only page
      ═══════════════════════════════════════════════════════ */
+
+  _switchDwnTab(tab) {
+    this.dwnTabBtns.forEach(b => {
+      const active = b.dataset.dwntab === tab;
+      b.style.borderBottomColor = active ? 'var(--accent)' : 'transparent';
+      b.style.color = active ? 'var(--accent-text)' : 'var(--text-muted)';
+    });
+    this.dwnTabPanes.forEach(p => {
+      p.style.display = p.id === 'dwnTab' + tab.charAt(0).toUpperCase() + tab.slice(1) ? 'block' : 'none';
+    });
+  }
+
   async _dwnDetectFormats() {
     const url = this.dwnUrl.value.trim();
     if (!url) { this._dwnShowError('Please enter a URL'); return; }
@@ -613,15 +643,25 @@ class VideoTranscriber {
     this._dwnHideError();
     this.dwnFormatsDiv.style.display = 'none';
     this.dwnCompleted.style.display = 'none';
+    this.dwnProgressPanel.classList.remove('show');
     try {
       const fd = new FormData(); fd.append('url', url);
       const resp = await fetch(`${this.apiBase}/download-video/formats`, { method: 'POST', body: fd });
       if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'Failed'); }
       const data = await resp.json();
-      this.dwnFormats = data.formats || [];
-      this.dwnSelectedFormat = 'best';
-      this._dwnRenderFormats();
+
+      // Store detected data
+      this._dwnData = data;
+      this.dwnSelectedVideoFormat = 'bestvideo+bestaudio/best';
+      this.dwnSelectedAudioFormat = 'bestaudio/best';
+
+      // Render all three tabs
+      this._dwnRenderVideoFormats();
+      this._dwnRenderAudioFormats();
+      this._dwnRenderSubtitleOptions();
+
       this.dwnFormatsDiv.style.display = 'block';
+      this._switchDwnTab('video');
     } catch (e) {
       this._dwnShowError('Detection failed: ' + e.message);
     } finally {
@@ -630,25 +670,86 @@ class VideoTranscriber {
     }
   }
 
-  _dwnRenderFormats() {
+  _dwnRenderVideoFormats() {
+    const formats = this._dwnData?.video_formats || [];
     this.dwnFmtList.innerHTML = '';
-    this.dwnFormats.forEach((f, i) => {
+    formats.forEach((f) => {
       const div = document.createElement('div');
-      div.className = 'fmt-item' + (f.id === this.dwnSelectedFormat ? ' selected' : '');
+      div.className = 'fmt-item' + (f.id === this.dwnSelectedVideoFormat ? ' selected' : '');
       const sizeStr = f.filesize ? this._dwnFormatSize(f.filesize) : '';
       div.innerHTML = `
         <div class="fmt-main">
-          <span class="fmt-name">${this._escapeHtml(f.resolution || f.note || f.id)}</span>
-          <span class="fmt-detail">${this._escapeHtml(f.ext || '')}</span>
+          <span class="fmt-name">${this._escapeHtml(f.note || f.resolution || f.id)}</span>
+          <span class="fmt-detail">${this._escapeHtml(f.ext || '')}${f.vcodec ? ' · ' + f.vcodec : ''}</span>
         </div>
         <span class="fmt-size">${sizeStr}</span>
       `;
       div.addEventListener('click', () => {
-        this.dwnSelectedFormat = f.id;
-        this._dwnRenderFormats();
+        this.dwnSelectedVideoFormat = f.id;
+        this._dwnRenderVideoFormats();
       });
       this.dwnFmtList.appendChild(div);
     });
+  }
+
+  _dwnRenderAudioFormats() {
+    const formats = this._dwnData?.audio_formats || [];
+    this.dwnAudioFmtList.innerHTML = '';
+    if (!formats.length) {
+      this.dwnAudioFmtList.innerHTML = '<div class="dwn-empty">该视频无可选纯音频流，请使用视频 Tab 下载后提取音频</div>';
+      this.dwnStartAudioBtn.disabled = true;
+      return;
+    }
+    this.dwnStartAudioBtn.disabled = false;
+    formats.forEach((f) => {
+      const div = document.createElement('div');
+      div.className = 'fmt-item' + (f.id === this.dwnSelectedAudioFormat ? ' selected' : '');
+      const sizeStr = f.filesize ? this._dwnFormatSize(f.filesize) : '';
+      div.innerHTML = `
+        <div class="fmt-main">
+          <span class="fmt-name">${this._escapeHtml(f.note || f.id)}</span>
+          <span class="fmt-detail">${this._escapeHtml(f.ext || '')}${f.acodec ? ' · ' + f.acodec : ''}${f.abr ? ' · ' + f.abr + 'kbps' : ''}</span>
+        </div>
+        <span class="fmt-size">${sizeStr}</span>
+      `;
+      div.addEventListener('click', () => {
+        this.dwnSelectedAudioFormat = f.id;
+        this._dwnRenderAudioFormats();
+      });
+      this.dwnAudioFmtList.appendChild(div);
+    });
+  }
+
+  _dwnRenderSubtitleOptions() {
+    const subs = this._dwnData?.subtitles || {};
+    const manual = subs.manual || [];
+    const auto = subs.auto || [];
+    const allLangs = [...new Set([...manual, ...auto])].sort();
+
+    if (!allLangs.length) {
+      this.dwnSubInfo.innerHTML = '<p style="color:var(--text-dim);">⚠️ 该视频无可下载字幕</p>';
+      this.dwnSubLang.innerHTML = '';
+      this.dwnStartSubBtn.disabled = true;
+      return;
+    }
+
+    this.dwnStartSubBtn.disabled = false;
+    const manualSet = new Set(manual);
+    let info = '';
+    if (manual.length) info += `✅ 手动字幕：${manual.join(', ')}<br>`;
+    if (auto.length) info += `🤖 自动字幕：${auto.join(', ')}`;
+    this.dwnSubInfo.innerHTML = info || '有可用字幕';
+
+    this.dwnSubLang.innerHTML = allLangs.map(l => {
+      const isManual = manualSet.has(l);
+      return `<option value="${l}">${l}${isManual ? ' (手动)' : ' (自动)'}</option>`;
+    }).join('');
+
+    // 默认选英语或第一个
+    const preferOrder = ['en', 'en-orig', 'zh-Hans', 'zh-Hant', 'zh'];
+    for (const p of preferOrder) {
+      if (allLangs.includes(p)) { this.dwnSubLang.value = p; break; }
+    }
   }
 
   _dwnFormatSize(bytes) {
@@ -661,9 +762,10 @@ class VideoTranscriber {
 
   _escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-  async _dwnStartDownload() {
+  async _dwnStartDownload(type) {
     const url = this.dwnUrl.value.trim();
-    if (!url || !this.dwnSelectedFormat) return;
+    if (!url) return;
+
     this.dwnFormatsDiv.style.display = 'none';
     this.dwnCompleted.style.display = 'none';
     this.dwnProgressPanel.classList.add('show');
@@ -675,8 +777,24 @@ class VideoTranscriber {
     try {
       const fd = new FormData();
       fd.append('url', url);
-      fd.append('format_id', this.dwnSelectedFormat);
-      const resp = await fetch(`${this.apiBase}/download-video`, { method: 'POST', body: fd });
+
+      let endpoint = '';
+      if (type === 'video') {
+        endpoint = `${this.apiBase}/download-video`;
+        fd.append('format_id', this.dwnSelectedVideoFormat);
+        fd.append('filename', this._dwnData?.title || '');
+      } else if (type === 'audio') {
+        endpoint = `${this.apiBase}/download-audio`;
+        fd.append('format_id', this.dwnSelectedAudioFormat);
+        fd.append('filename', this._dwnData?.title || '');
+        fd.append('audio_format', this.dwnAudioContainer.value);
+      } else if (type === 'subtitle') {
+        endpoint = `${this.apiBase}/download-subtitles`;
+        fd.append('lang', this.dwnSubLang.value);
+        fd.append('filename', this._dwnData?.title || '');
+      }
+
+      const resp = await fetch(endpoint, { method: 'POST', body: fd });
       if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'Failed'); }
       const data = await resp.json();
       this.dwnTaskId = data.task_id;

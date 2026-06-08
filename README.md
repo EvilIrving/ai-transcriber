@@ -404,22 +404,7 @@ We welcome Issues and Pull Requests!
 
 ## 📞 Contact
 
-For questions or suggestions, please submit an Issue or contact Wendy.
-
----
-
-## 🚀 Try the Full Product — sipsip.ai
-
-This tool is the open-source part of **[sipsip.ai](https://sipsip.ai)**.
-
-The full product goes further:
-- 📧 **Daily email briefs** — follow your favorite creators and get an AI-curated digest in your inbox every morning
-- ⚡ Transcribe & summarize any video or podcast on demand
-- 🌐 Multi-language support across all features
-
-**Free to start** — no credit card required.
-
-➡️ [sipsip.ai](https://sipsip.ai)
+For questions or suggestions, please submit an Issue.
 
 ---
 

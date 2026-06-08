@@ -32,36 +32,78 @@ class VideoProcessor:
             'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
             'remote_components': ['ejs:github'],  # 启用 JS 挑战求解器以绕过 YouTube 反爬
         }
+        # cookies 配置独立存储，供所有 yt-dlp 调用复用
+        self._cookies_opts: dict = {}
         self._configure_cookies()
+
+    def _get_base_opts(self, extra: dict = None) -> dict:
+        """返回带 cookies 的基础 yt-dlp 选项，所有调用应从此获取。"""
+        base = {
+            'quiet': True,
+            'no_warnings': True,
+            'noplaylist': True,
+            **self._cookies_opts,
+        }
+        if extra:
+            base.update(extra)
+        return base
 
     def _configure_cookies(self):
         """
         配置 yt-dlp cookies 以绕过 YouTube 反爬虫验证。
-        优先级：COOKIES_FILE > COOKIES_BROWSER > 自动检测 Chrome
+        优先级：COOKIES_FILE > COOKIES_BROWSER > 自动检测本地浏览器
         """
+        # 1) 显式 cookie 文件
         cookies_file = os.getenv("COOKIES_FILE")
         if cookies_file and os.path.isfile(cookies_file):
+            self._cookies_opts['cookiefile'] = cookies_file
             self.ydl_opts['cookiefile'] = cookies_file
             logger.info(f"使用 cookie 文件: {cookies_file}")
             return
 
-        browser = os.getenv("COOKIES_BROWSER", "chrome").lower()
-        # 检查浏览器 cookie 文件是否存在
-        browser_paths = {
-            "chrome": os.path.expanduser("~/Library/Application Support/Google/Chrome/Default/Cookies"),
-            "brave": os.path.expanduser("~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Cookies"),
-            "edge": os.path.expanduser("~/Library/Application Support/Microsoft Edge/Default/Cookies"),
-            "firefox": None,  # Firefox 使用不同的 cookie 提取方式
-        }
-        if browser in browser_paths and browser_paths[browser] and os.path.isfile(browser_paths[browser]):
+        # 2) 环境变量指定浏览器
+        browser = os.getenv("COOKIES_BROWSER", "").strip().lower()
+        if browser:
             try:
-                self.ydl_opts['cookiesfrombrowser'] = (browser,)
+                # 验证浏览器是否可用（yt-dlp 会自行处理路径）
+                self._cookies_opts['cookiesfrombrowser'] = (browser, None, None, None)
+                self.ydl_opts['cookiesfrombrowser'] = (browser, None, None, None)
                 logger.info(f"使用浏览器 cookies: {browser}")
                 return
             except Exception as e:
                 logger.warning(f"无法从 {browser} 提取 cookies: {e}")
 
-        logger.warning("未配置 cookies，YouTube 下载可能因反爬验证失败")
+        # 3) 自动检测 macOS 上可用的浏览器
+        if not self._cookies_opts:
+            detected = self._detect_browser_cookies()
+            if detected:
+                self._cookies_opts['cookiesfrombrowser'] = (detected, None, None, None)
+                self.ydl_opts['cookiesfrombrowser'] = (detected, None, None, None)
+                logger.info(f"自动检测浏览器 cookies: {detected}")
+                return
+
+        logger.warning("未配置 cookies，YouTube 下载可能因反爬验证失败。"
+                       "请设置环境变量 COOKIES_FILE 或 COOKIES_BROWSER")
+
+    @staticmethod
+    def _detect_browser_cookies() -> Optional[str]:
+        """自动检测 macOS 上第一个可用的浏览器 cookie 数据库。"""
+        candidates = [
+            ("chrome", "~/Library/Application Support/Google/Chrome/Default/Cookies"),
+            ("chrome", "~/Library/Application Support/Google/Chrome/Profile */Cookies"),
+            ("brave", "~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Cookies"),
+            ("edge", "~/Library/Application Support/Microsoft Edge/Default/Cookies"),
+            ("firefox", None),  # yt-dlp 对 Firefox 有原生支持
+        ]
+        import glob as _glob
+        for browser_name, path_pattern in candidates:
+            if path_pattern is None:
+                return browser_name  # Firefox 直接信任 yt-dlp
+            expanded = os.path.expanduser(path_pattern)
+            matches = _glob.glob(expanded)
+            if matches:
+                return browser_name
+        return None
 
     async def normalize_local_media_to_m4a(self, input_path: Path, output_dir: Path) -> str:
         """
@@ -105,7 +147,7 @@ class VideoProcessor:
 
         try:
             # 1. 快速探测：获取视频信息和字幕可用性，不下载任何内容
-            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+            check_opts = self._get_base_opts()
             with yt_dlp.YoutubeDL(check_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, url, False)
 
@@ -138,17 +180,14 @@ class VideoProcessor:
 
             # 2. 仅下载字幕，跳过音视频
             sub_dir.mkdir(exist_ok=True)
-            dl_opts = {
+            dl_opts = self._get_base_opts({
                 "writesubtitles": prefer_manual,
                 "writeautomaticsub": not prefer_manual,
                 "subtitlesformat": "vtt/srt/best",
                 "subtitleslangs": [prefer_lang],
                 "skip_download": True,
                 "outtmpl": str(sub_dir / "sub.%(ext)s"),
-                "quiet": True,
-                "no_warnings": True,
-                "noplaylist": True,
-            }
+            })
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
                 await asyncio.to_thread(ydl.download, [url])
 
@@ -465,7 +504,7 @@ class VideoProcessor:
         """快速获取视频标题（仅探测，不下载）"""
         try:
             import asyncio
-            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+            check_opts = self._get_base_opts()
             with yt_dlp.YoutubeDL(check_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, url, False)
                 return info.get("title", "unknown")
@@ -473,64 +512,181 @@ class VideoProcessor:
             logger.error(f"获取视频标题失败: {e}")
             return "unknown"
 
-    async def get_video_formats(self, url: str) -> list:
-        """获取视频可用格式列表（用于下载选择）"""
+    async def get_video_formats(self, url: str) -> dict:
+        """获取视频/音频可用格式及字幕信息（用于下载选择）。
+        
+        Returns:
+            {
+                "video_formats": [...],
+                "audio_formats": [...],
+                "subtitles": {"manual": [...], "auto": [...]},
+                "title": str,
+                "duration": int,
+            }
+        """
         try:
             import asyncio
-            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+            check_opts = self._get_base_opts()
             with yt_dlp.YoutubeDL(check_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, url, False)
 
-            formats = []
-            seen = set()
+            video_formats = []
+            audio_formats = []
+            # 按用户可见特征去重：(height, vcodec, ext) / (abr, acodec, ext)
+            seen_v = {}  # key -> index in video_formats
+            seen_a = {}  # key -> index in audio_formats
 
-            # 添加默认选项
-            formats.append({
-                "id": "best",
+            # ── 视频格式 ────────────────────────────────────
+            video_formats.append({
+                "id": "bestvideo+bestaudio/best",
                 "ext": "mp4",
                 "resolution": "最佳质量",
                 "note": "自动选择最佳视频+音频",
                 "filesize": info.get("filesize_approx") or 0,
+                "vcodec": "",
+                "acodec": "",
+                "type": "video",
             })
 
             for f in info.get("formats", []):
                 fid = f.get("format_id", "")
-                if fid in seen:
-                    continue
-                seen.add(fid)
-
                 ext = f.get("ext", "")
-                # 跳过纯音频格式
-                if f.get("vcodec") == "none":
-                    continue
-                # 跳过没有视频的格式（但保留同时有音频+视频的）
-                if f.get("vcodec", "none") == "none":
-                    continue
+                vcodec = f.get("vcodec", "none")
+                acodec = f.get("acodec", "none")
+                has_video = vcodec and vcodec != "none"
+                has_audio = acodec and acodec != "none"
 
-                resolution = f.get("resolution") or f.get("format_note") or ""
-                height = f.get("height") or 0
-                filesize = f.get("filesize") or f.get("filesize_approx") or 0
-                vcodec = f.get("vcodec", "")
+                # 视频格式（有视频轨道）
+                if has_video:
+                    height = f.get("height") or 0
+                    # 去重 key：同分辨率 + 同视频编码 + 同容器 = 重复
+                    vkey = (height, vcodec, ext)
 
-                label = resolution
-                if ext:
-                    label += f" ({ext})"
-                if vcodec:
-                    label += f" [{vcodec}]"
+                    resolution = f.get("resolution") or f.get("format_note") or ""
+                    filesize = f.get("filesize") or f.get("filesize_approx") or 0
+                    fps = f.get("fps") or 0
 
-                formats.append({
-                    "id": fid,
-                    "ext": ext,
-                    "resolution": resolution,
-                    "height": height,
-                    "note": label,
-                    "filesize": filesize,
+                    # 优先保留含音频的格式，其次保留 filesize 更大的（通常质量更好）
+                    if vkey in seen_v:
+                        existing_idx = seen_v[vkey]
+                        existing = video_formats[existing_idx]
+                        existing_has_audio = bool(existing.get("acodec"))
+                        current_has_audio = has_audio
+                        if (not existing_has_audio and current_has_audio) or \
+                           (existing_has_audio == current_has_audio and filesize > existing.get("filesize", 0)):
+                            # 用当前条目替换
+                            pass  # fall through to update below
+                        else:
+                            continue  # 保留原有
+
+                    label_parts = [resolution]
+                    if ext:
+                        label_parts.append(f"({ext})")
+                    if vcodec:
+                        label_parts.append(f"[{vcodec}]")
+                    if fps:
+                        label_parts.append(f"{fps}fps")
+
+                    entry = {
+                        "id": fid,
+                        "ext": ext,
+                        "resolution": resolution,
+                        "height": height,
+                        "note": " ".join(label_parts),
+                        "filesize": filesize,
+                        "vcodec": vcodec,
+                        "acodec": acodec if has_audio else "",
+                        "type": "video",
+                    }
+
+                    if vkey in seen_v:
+                        video_formats[seen_v[vkey]] = entry
+                    else:
+                        seen_v[vkey] = len(video_formats)
+                        video_formats.append(entry)
+
+                # 纯音频格式
+                if not has_video and has_audio:
+                    abr = f.get("abr") or 0
+                    asr = f.get("asr") or 0
+                    # 去重 key：同码率 + 同编码 + 同容器 = 重复
+                    akey = (abr, acodec, ext)
+
+                    filesize = f.get("filesize") or f.get("filesize_approx") or 0
+                    format_note = f.get("format_note") or ""
+
+                    if akey in seen_a:
+                        existing_idx = seen_a[akey]
+                        existing = audio_formats[existing_idx]
+                        # 保留采样率更高的，或 filesize 更大的
+                        existing_asr = existing.get("asr", 0) or 0
+                        if asr > existing_asr or (asr == existing_asr and filesize > existing.get("filesize", 0)):
+                            pass  # replace
+                        else:
+                            continue
+
+                    label_parts = [format_note] if format_note else []
+                    if ext:
+                        label_parts.append(f"({ext})")
+                    if acodec:
+                        label_parts.append(f"[{acodec}]")
+                    if abr:
+                        label_parts.append(f"~{abr}kbps")
+                    if asr:
+                        label_parts.append(f"{int(asr)}Hz")
+
+                    entry = {
+                        "id": fid,
+                        "ext": ext,
+                        "abr": abr,
+                        "asr": asr,
+                        "note": " ".join(label_parts) or fid,
+                        "filesize": filesize,
+                        "acodec": acodec,
+                        "type": "audio",
+                    }
+
+                    if akey in seen_a:
+                        audio_formats[seen_a[akey]] = entry
+                    else:
+                        seen_a[akey] = len(audio_formats)
+                        audio_formats.append(entry)
+
+            # 排序：视频按分辨率降序，音频按码率降序
+            video_formats[1:] = sorted(video_formats[1:], key=lambda x: -(x.get("height", 0)))
+            audio_formats.sort(key=lambda x: -(x.get("abr", 0)))
+
+            # 添加默认音频选项
+            if audio_formats:
+                audio_formats.insert(0, {
+                    "id": "bestaudio/best",
+                    "ext": "m4a",
+                    "abr": 0,
+                    "asr": 0,
+                    "note": "最佳音质（自动选择）",
+                    "filesize": 0,
+                    "acodec": "",
+                    "type": "audio",
                 })
 
-            # 按分辨率降序排列（best已在前）
-            formats[1:] = sorted(formats[1:], key=lambda x: -(x.get("height", 0)))
+            # ── 字幕信息 ──────────────────────────────────────
+            manual_subs_raw = info.get("subtitles") or {}
+            auto_caps_raw = info.get("automatic_captions") or {}
+            manual_langs = sorted([k for k in manual_subs_raw if not k.startswith("live_chat")])
+            auto_langs = sorted([k for k in auto_caps_raw if not k.startswith("live_chat")])
 
-            return formats[:30]  # 限制返回数量
+            subtitles = {
+                "manual": manual_langs,
+                "auto": auto_langs,
+            }
+
+            return {
+                "video_formats": video_formats[:30],
+                "audio_formats": audio_formats[:20],
+                "subtitles": subtitles,
+                "title": info.get("title", ""),
+                "duration": info.get("duration") or 0,
+            }
 
         except Exception as e:
             logger.error(f"获取视频格式失败: {e}")
@@ -548,20 +704,11 @@ class VideoProcessor:
             safe_name = self._sanitize_filename(filename_base) if filename_base else f"video_{unique_id}"
             output_template = str(output_dir / f"{safe_name}.%(ext)s")
 
-            dl_opts = {
+            dl_opts = self._get_base_opts({
                 "format": format_id,
                 "outtmpl": output_template,
-                "quiet": True,
-                "no_warnings": True,
-                "noplaylist": True,
                 "merge_output_format": "mp4",
-            }
-
-            # 复制cookies配置
-            if "cookiefile" in self.ydl_opts:
-                dl_opts["cookiefile"] = self.ydl_opts["cookiefile"]
-            if "cookiesfrombrowser" in self.ydl_opts:
-                dl_opts["cookiesfrombrowser"] = self.ydl_opts["cookiesfrombrowser"]
+            })
 
             logger.info(f"开始下载视频: {url} (format={format_id})")
 
@@ -586,6 +733,123 @@ class VideoProcessor:
         except Exception as e:
             logger.error(f"下载视频失败: {e}")
             raise Exception(f"下载视频失败: {str(e)}")
+
+    async def download_audio_only(
+        self, url: str, output_dir: Path, format_id: str = "bestaudio/best",
+        filename_base: str = "", audio_format: str = "m4a"
+    ) -> str:
+        """仅下载音频文件，返回输出路径。"""
+        try:
+            import asyncio
+            output_dir.mkdir(exist_ok=True)
+
+            unique_id = str(uuid.uuid4())[:8]
+            safe_name = self._sanitize_filename(filename_base) if filename_base else f"audio_{unique_id}"
+            output_template = str(output_dir / f"{safe_name}.%(ext)s")
+
+            dl_opts = self._get_base_opts({
+                "format": format_id,
+                "outtmpl": output_template,
+                "merge_output_format": audio_format,
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": audio_format,
+                }] if audio_format not in ("m4a", "mp3", "opus", "aac", "flac", "wav") else [],
+            })
+
+            logger.info(f"开始下载音频: {url} (format={format_id})")
+
+            with yt_dlp.YoutubeDL(dl_opts) as ydl:
+                await asyncio.to_thread(ydl.download, [url])
+
+            # 查找输出文件
+            import glob as _glob
+            pattern = str(output_dir / f"{safe_name}.*")
+            candidates = _glob.glob(pattern)
+            if candidates:
+                return candidates[0]
+
+            fallback_pattern = str(output_dir / f"*{unique_id}*")
+            candidates = _glob.glob(fallback_pattern)
+            if candidates:
+                return candidates[0]
+
+            raise Exception("下载完成但未找到音频文件")
+
+        except Exception as e:
+            logger.error(f"下载音频失败: {e}")
+            raise Exception(f"下载音频失败: {str(e)}")
+
+    async def download_subtitles_file(
+        self, url: str, output_dir: Path, lang: str = "en",
+        filename_base: str = ""
+    ) -> tuple[str, str]:
+        """仅下载字幕文件，返回 (文件路径, 语言代码)。"""
+        try:
+            import asyncio
+            output_dir.mkdir(exist_ok=True)
+
+            # 先探测字幕可用性
+            check_opts = self._get_base_opts()
+            with yt_dlp.YoutubeDL(check_opts) as ydl:
+                info = await asyncio.to_thread(ydl.extract_info, url, False)
+
+            manual_subs = info.get("subtitles") or {}
+            auto_caps = info.get("automatic_captions") or {}
+            manual_langs = [k for k in manual_subs if not k.startswith("live_chat")]
+            auto_langs = [k for k in auto_caps if not k.startswith("live_chat")]
+
+            prefer_manual = bool(manual_langs)
+            candidate_langs = manual_langs if prefer_manual else auto_langs
+
+            if not candidate_langs:
+                raise Exception("该视频无可下载字幕")
+
+            # 选语言：指定语言 > 英语 > 中文 > 第一个可用
+            _priority = [lang, "en", "en-orig", "zh-Hans", "zh-Hant", "zh"]
+            chosen_lang = next(
+                (l for l in _priority if l in candidate_langs),
+                candidate_langs[0],
+            )
+
+            unique_id = str(uuid.uuid4())[:8]
+            safe_name = self._sanitize_filename(filename_base) if filename_base else f"subs_{unique_id}"
+            safe_name_no_ext = safe_name.rsplit(".", 1)[0] if "." in safe_name else safe_name
+            output_template = str(output_dir / f"{safe_name_no_ext}.%(ext)s")
+
+            dl_opts = self._get_base_opts({
+                "writesubtitles": prefer_manual,
+                "writeautomaticsub": not prefer_manual,
+                "subtitlesformat": "vtt/srt/best",
+                "subtitleslangs": [chosen_lang],
+                "skip_download": True,
+                "outtmpl": output_template,
+            })
+
+            with yt_dlp.YoutubeDL(dl_opts) as ydl:
+                await asyncio.to_thread(ydl.download, [url])
+
+            # 查找输出文件
+            import glob as _glob
+            pattern_no_ext = str(output_dir / f"{safe_name_no_ext}.*")
+            candidates = _glob.glob(pattern_no_ext)
+            # 过滤出字幕格式
+            sub_exts = {".vtt", ".srt"}
+            sub_files = [c for c in candidates if Path(c).suffix.lower() in sub_exts]
+            if sub_files:
+                return sub_files[0], chosen_lang
+
+            # 回退：按 unique_id 查找
+            fallback = _glob.glob(str(output_dir / f"*{unique_id}*"))
+            sub_files = [c for c in fallback if Path(c).suffix.lower() in sub_exts]
+            if sub_files:
+                return sub_files[0], chosen_lang
+
+            raise Exception("字幕下载完成但未找到文件")
+
+        except Exception as e:
+            logger.error(f"下载字幕失败: {e}")
+            raise Exception(f"下载字幕失败: {str(e)}")
 
     @staticmethod
     def _sanitize_filename(name: str) -> str:
