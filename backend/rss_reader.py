@@ -14,6 +14,7 @@ import uuid
 import asyncio
 import urllib.request
 import urllib.error
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
