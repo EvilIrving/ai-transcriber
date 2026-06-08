@@ -106,6 +106,7 @@ class VideoTranscriber {
     this.dlSummary          = document.getElementById('downloadSummary');
     this.copyScriptBtn      = document.getElementById('copyScript');
     this.copySummaryBtn     = document.getElementById('copySummary');
+    this.copyTranslationBtn = document.getElementById('copyTranslation');
     this.translationTabBtn  = document.getElementById('translationTabBtn');
     this.tabBtns            = document.querySelectorAll('#pageTranscribe .tab-btn');
     this.tabPanes           = document.querySelectorAll('#pageTranscribe .tab-pane');
@@ -204,8 +205,9 @@ class VideoTranscriber {
     this.dlTranslation.addEventListener('click', () => this._downloadFile('translation'));
     this.dlSummary.addEventListener('click',     () => this._downloadFile('summary'));
     // Copy buttons
-    this.copyScriptBtn.addEventListener('click',  () => this._copyTabContent('script'));
-    this.copySummaryBtn.addEventListener('click', () => this._copyTabContent('summary'));
+    this.copyScriptBtn.addEventListener('click',      () => this._copyTabContent('script'));
+    this.copySummaryBtn.addEventListener('click',     () => this._copyTabContent('summary'));
+    this.copyTranslationBtn.addEventListener('click', () => this._copyTabContent('translation'));
     // Upload
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => { e.stopPropagation(); this.fileInput.click(); });
@@ -565,6 +567,7 @@ class VideoTranscriber {
     let el, btn;
     if (type === 'script') { el = this.scriptContent; btn = this.copyScriptBtn; }
     else if (type === 'summary') { el = this.summaryContent; btn = this.copySummaryBtn; }
+    else if (type === 'translation') { el = this.translationContent; btn = this.copyTranslationBtn; }
     else return;
     if (!el || !el.textContent.trim()) return;
 

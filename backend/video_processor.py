@@ -72,8 +72,11 @@ class VideoProcessor:
             logger.info(f"使用浏览器 cookies: {browser}")
             return
 
-        # 3) 自动检测 macOS 上可用的浏览器
-        if not self._cookies_opts:
+        # 3) 自动检测浏览器 cookies 默认关闭。
+        # 读取浏览器 cookies 在 macOS 上经常会触发钥匙串/数据库访问，
+        # Detect 阶段可能因此比命令行裸跑 yt-dlp 慢十几秒。
+        auto_detect = os.getenv("AUTO_DETECT_BROWSER_COOKIES", "").strip().lower()
+        if auto_detect in {"1", "true", "yes", "on"}:
             detected = self._detect_browser_cookies()
             if detected:
                 self._cookies_opts['cookiesfrombrowser'] = (detected,)
@@ -81,8 +84,8 @@ class VideoProcessor:
                 logger.info(f"自动检测浏览器 cookies: {detected}")
                 return
 
-        logger.warning("未配置 cookies，YouTube 下载可能因反爬验证失败。"
-                       "请设置环境变量 COOKIES_FILE 或 COOKIES_BROWSER")
+        logger.info("未配置 cookies；如 YouTube 遇到反爬验证，请设置 COOKIES_FILE、COOKIES_BROWSER，"
+                    "或设置 AUTO_DETECT_BROWSER_COOKIES=1 启用自动检测。")
 
     @staticmethod
     def _detect_browser_cookies() -> Optional[str]:
@@ -92,12 +95,10 @@ class VideoProcessor:
             ("chrome", "~/Library/Application Support/Google/Chrome/Profile */Cookies"),
             ("brave", "~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Cookies"),
             ("edge", "~/Library/Application Support/Microsoft Edge/Default/Cookies"),
-            ("firefox", None),  # yt-dlp 对 Firefox 有原生支持
+            ("firefox", "~/Library/Application Support/Firefox/Profiles/*/cookies.sqlite"),
         ]
         import glob as _glob
         for browser_name, path_pattern in candidates:
-            if path_pattern is None:
-                return browser_name  # Firefox 直接信任 yt-dlp
             expanded = os.path.expanduser(path_pattern)
             matches = _glob.glob(expanded)
             if matches:
