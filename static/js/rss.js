@@ -229,20 +229,36 @@ async _rssImportJsonFile(file) {
 },
 
 async _rssLoadFeeds() {
-  this._rssRenderFeeds(this._rssSummaries(await this._rssReadStore()));
+  this._rssFeeds = this._rssSummaries(await this._rssReadStore());
+  this._rssFilterFeeds();
+  if (this.rssSearchInput) this.rssSearchInput.value = '';
+  if (this.rssSearchRow) this.rssSearchRow.style.display = this._rssFeeds.length ? 'block' : 'none';
+},
+
+_rssFilterFeeds() {
+  const q = (this.rssSearchInput?.value || '').trim().toLowerCase();
+  const filtered = q ? this._rssFeeds.filter(f => (f.title || '').toLowerCase().includes(q)) : this._rssFeeds;
+  this._rssRenderFeeds(filtered);
 },
 
 _rssRenderFeeds(feeds) {
-  if (!feeds.length) {
+  const fullFeeds = this._rssFeeds || feeds;
+  if (!fullFeeds.length) {
     this.feedList.innerHTML = `<div class="rss-empty"><div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div><p>${this.t('rss_empty')}</p></div>`;
     if (this.rssSummaryBar) this.rssSummaryBar.style.display = 'none';
+    if (this.rssSearchRow) this.rssSearchRow.style.display = 'none';
     return;
   }
+  if (this.rssSearchRow) this.rssSearchRow.style.display = 'block';
   if (this.rssSummaryBar) {
-    const totalEntries = feeds.reduce((s, f) => s + (f.entry_count || 0), 0);
-    const totalNew = feeds.reduce((s, f) => s + (f.new_count || 0), 0);
+    const totalEntries = fullFeeds.reduce((s, f) => s + (f.entry_count || 0), 0);
+    const totalNew = fullFeeds.reduce((s, f) => s + (f.new_count || 0), 0);
     this.rssSummaryBar.style.display = 'flex';
-    this.rssSummaryText.textContent = `${this.t('rss_total')(feeds.length, totalEntries, totalNew)}`;
+    this.rssSummaryText.textContent = `${this.t('rss_total')(fullFeeds.length, totalEntries, totalNew)}`;
+  }
+  if (!feeds.length) {
+    this.feedList.innerHTML = `<div class="rss-empty"><div class="rss-empty-icon"><i class="fas fa-search"></i></div><p>${this.t('rss_no_match')}</p></div>`;
+    return;
   }
   this.feedList.innerHTML = feeds.map(f => {
     const lastChecked = f.last_checked ? new Date(f.last_checked).toLocaleString() : this.t('never_updated');
@@ -280,9 +296,13 @@ _rssRenderFeeds(feeds) {
   this.feedList.querySelectorAll('.feed-card').forEach(card => {
     card.addEventListener('click', (e) => {
       if (e.target.closest('[data-action]')) return;
-      card.classList.toggle('expanded');
-      const fid = card.dataset.feedId;
-      if (card.classList.contains('expanded')) this._rssLoadEntries(fid);
+      const wasExpanded = card.classList.contains('expanded');
+      this.feedList.querySelectorAll('.feed-card.expanded').forEach(c => c.classList.remove('expanded'));
+      if (!wasExpanded) {
+        card.classList.add('expanded');
+        const fid = card.dataset.feedId;
+        this._rssLoadEntries(fid);
+      }
     });
   });
 
