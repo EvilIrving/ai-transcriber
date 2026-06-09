@@ -24,7 +24,11 @@ async _rssReadStore() {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('feeds', 'readonly');
     const req = tx.objectStore('feeds').getAll();
-    req.onsuccess = () => resolve((req.result || []).sort((a, b) => String(b.added_at || '').localeCompare(String(a.added_at || ''))));
+    req.onsuccess = () => resolve((req.result || []).sort((a, b) => {
+      const favDiff = (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0);
+      if (favDiff) return favDiff;
+      return String(b.added_at || '').localeCompare(String(a.added_at || ''));
+    }));
     req.onerror = () => reject(req.error || new Error('RSS read failed'));
   });
 },
@@ -53,6 +57,7 @@ _rssMergeFeed(oldFeed, newFeed) {
   return {
     ...newFeed,
     added_at: oldFeed?.added_at || newFeed.added_at,
+    favorite: Boolean(oldFeed?.favorite),
     entries: mergedEntries,
     new_count: mergedEntries.filter(e => !e.processed && !existingIds.has(e.id)).length,
   };
@@ -62,6 +67,7 @@ _rssSummaries(feeds) {
   return feeds.map(f => ({
     id: f.id,
     title: f.title,
+    favorite: Boolean(f.favorite),
     type: f.type,
     url: f.url,
     last_checked: f.last_checked,
@@ -263,6 +269,7 @@ _rssRenderFeeds(feeds) {
     this._rssRenderEmptyEntries(this.t('rss_no_match'));
     return;
   }
+  this._hideRssTooltip();
   this.feedList.innerHTML = feeds.map(f => {
     const lastChecked = f.last_checked ? new Date(f.last_checked).toLocaleString() : this.t('never_updated');
     const errorInfo = f.last_error ? `<span style="color:var(--error);font-size:10px;" title="${this._escapeHtml(f.last_error)}"><i class="fas fa-triangle-exclamation"></i> ${this.t('rss_refresh_failed')}</span>` : '';
@@ -270,7 +277,7 @@ _rssRenderFeeds(feeds) {
     return `
     <div class="feed-card${f.id === this._rssActiveFeedId ? ' active' : ''}" data-feed-id="${f.id}">
       <div class="feed-card-header">
-        <div>
+        <div class="feed-card-main" data-tooltip="${this._escapeHtml(f.title)}">
           <div class="feed-card-title">
             ${this._escapeHtml(f.title)} ${newBadge}
           </div>
@@ -282,6 +289,9 @@ _rssRenderFeeds(feeds) {
           </div>
         </div>
         <div style="display:flex;gap:4px;">
+          <button class="feed-card-del${f.favorite ? ' favorited' : ''}" data-action="favorite-feed" data-feed-id="${f.id}" title="${f.favorite ? this.t('unfavorite') : this.t('favorite')}">
+            <i class="${f.favorite ? 'fas' : 'far'} fa-star"></i>
+          </button>
           <button class="feed-card-del" data-action="refresh-feed" data-feed-id="${f.id}" title="${this.t('refresh')}">
             <i class="fas fa-sync-alt"></i>
           </button>
@@ -300,11 +310,19 @@ _rssRenderFeeds(feeds) {
       this._rssRenderFeeds(feeds);
     });
   });
+  this._bindRssTitleTooltips();
 
   this.feedList.querySelectorAll('[data-action="delete-feed"]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (confirm(this.t('confirm_delete_feed'))) this._rssDeleteFeed(btn.dataset.feedId);
+    });
+  });
+
+  this.feedList.querySelectorAll('[data-action="favorite-feed"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._rssToggleFavorite(btn.dataset.feedId);
     });
   });
 
@@ -316,6 +334,49 @@ _rssRenderFeeds(feeds) {
   });
 
   this._rssLoadEntries(this._rssActiveFeedId);
+},
+
+_bindRssTitleTooltips() {
+  this.feedList.querySelectorAll('.feed-card-main[data-tooltip]').forEach(el => {
+    el.addEventListener('mouseenter', () => this._showRssTooltip(el));
+    el.addEventListener('focusin', () => this._showRssTooltip(el));
+    el.addEventListener('mouseleave', () => this._hideRssTooltip());
+    el.addEventListener('focusout', () => this._hideRssTooltip());
+  });
+},
+
+_showRssTooltip(anchor) {
+  const text = anchor?.dataset?.tooltip || '';
+  if (!text) return;
+  if (!this._rssTooltipEl) {
+    this._rssTooltipEl = document.createElement('div');
+    this._rssTooltipEl.className = 'rss-floating-tooltip';
+    this._rssTooltipEl.setAttribute('role', 'tooltip');
+    document.body.appendChild(this._rssTooltipEl);
+  }
+  const tip = this._rssTooltipEl;
+  tip.textContent = text;
+  tip.style.left = '0px';
+  tip.style.top = '0px';
+  tip.classList.add('show');
+  requestAnimationFrame(() => {
+    const rect = anchor.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    const margin = 12;
+    const gap = 8;
+    const centeredLeft = rect.left + (rect.width - tipRect.width) / 2;
+    const left = Math.min(Math.max(centeredLeft, margin), window.innerWidth - tipRect.width - margin);
+    const above = rect.top - tipRect.height - gap;
+    const top = above >= margin
+      ? above
+      : Math.min(rect.bottom + gap, window.innerHeight - tipRect.height - margin);
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+  });
+},
+
+_hideRssTooltip() {
+  if (this._rssTooltipEl) this._rssTooltipEl.classList.remove('show');
 },
 
 async _rssLoadEntries(feedId) {
@@ -422,6 +483,15 @@ async _rssCreateTask(feedId, entryId, action) {
   } catch (e) {
     this._rssShowError(this.t('task_creation_failed') + e.message);
   }
+},
+
+async _rssToggleFavorite(feedId) {
+  const feeds = await this._rssReadStore();
+  const feed = feeds.find(f => f.id === feedId);
+  if (!feed) return;
+  feed.favorite = !feed.favorite;
+  await this._rssWriteStore(feeds);
+  await this._rssLoadFeeds();
 },
 
 async _rssDeleteFeed(feedId) {
