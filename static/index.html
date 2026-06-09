@@ -349,12 +349,22 @@
     .feed-card.expanded { border-color: var(--accent-dim); box-shadow: 0 0 0 1px rgba(192,120,48,.1); }
     .feed-card-header { display: flex; justify-content: space-between; align-items: center; cursor:pointer; border-radius:var(--r-sm); gap: 10px; }
     .feed-card-header > div:first-child { min-width: 0; }
+    .feed-card-main { min-width: 0; }
+    .rss-floating-tooltip {
+      position: fixed; z-index: 1000; max-width: min(420px, calc(100vw - 32px)); padding: 8px 10px;
+      background: var(--surface-3); border: 1px solid var(--border-light); border-radius: var(--r-sm);
+      color: var(--text); font-size: 12px; line-height: 1.45; box-shadow: 0 10px 28px rgba(0,0,0,.24);
+      pointer-events: none; opacity: 0; transform: translateY(-2px); transition: opacity .16s, transform .16s;
+    }
+    .rss-floating-tooltip.show { opacity: 1; transform: translateY(0); }
     .feed-card.expanded .feed-card-header { position:sticky; top:0; z-index:2; background:var(--surface); padding-bottom:10px; box-shadow:0 1px 0 var(--border); }
     .feed-card-title { font-weight: 650; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .feed-card-meta { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 10px; align-items: center; overflow: hidden; }
     .feed-card-badge { font-size: 9.5px; padding: 1.5px 7px; border-radius: 10px; background: var(--surface-3); color: var(--text-muted); }
     .feed-card-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 4px 6px; }
     .feed-card-del:hover { color: var(--error); }
+    .feed-card-del.favorited { color: #f5b400; }
+    .feed-card-del[data-action="favorite-feed"]:hover { color: #f5b400; }
     .feed-entries {
       max-height: 0; overflow: hidden; border-top: 1px solid transparent; margin-top: 0; padding-top: 0;
       transition: max-height .3s ease-out, margin-top .3s, padding-top .3s, border-color .3s;
@@ -451,7 +461,7 @@
     .split-list, .split-detail {
       min-height: 0; overflow-y: auto;
     }
-    .split-list { padding-right: 4px; }
+    .split-list { padding-right: 4px; overflow-x: hidden; }
     .split-detail {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
       padding: 18px 20px;
