@@ -235,7 +235,14 @@ async _rssLoadFeeds() {
 _rssRenderFeeds(feeds) {
   if (!feeds.length) {
     this.feedList.innerHTML = `<div class="rss-empty"><div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div><p>${this.t('rss_empty')}</p></div>`;
+    if (this.rssSummaryBar) this.rssSummaryBar.style.display = 'none';
     return;
+  }
+  if (this.rssSummaryBar) {
+    const totalEntries = feeds.reduce((s, f) => s + (f.entry_count || 0), 0);
+    const totalNew = feeds.reduce((s, f) => s + (f.new_count || 0), 0);
+    this.rssSummaryBar.style.display = 'flex';
+    this.rssSummaryText.textContent = `${this.t('rss_total')(feeds.length, totalEntries, totalNew)}`;
   }
   this.feedList.innerHTML = feeds.map(f => {
     const lastChecked = f.last_checked ? new Date(f.last_checked).toLocaleString() : this.t('never_updated');

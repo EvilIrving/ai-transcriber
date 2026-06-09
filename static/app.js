@@ -127,6 +127,8 @@ class VideoTranscriber {
     this.feedList           = document.getElementById('feedList');
     this.rssErrorBanner     = document.getElementById('rssErrorBanner');
     this.rssErrorMsg        = document.getElementById('rssErrorMsg');
+    this.rssSummaryBar      = document.getElementById('rssSummaryBar');
+    this.rssSummaryText     = document.getElementById('rssSummaryText');
 
     // Summary history page
     this.historySearch      = document.getElementById('historySearch');
