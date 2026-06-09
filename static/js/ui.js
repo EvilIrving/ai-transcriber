@@ -163,6 +163,9 @@ _setLoading(on) {
   if (this.uploadPickBtn) this.uploadPickBtn.disabled = on;
   if (this.uploadZone) { this.uploadZone.style.pointerEvents = on ? 'none' : ''; this.uploadZone.style.opacity = on ? '0.65' : ''; this.uploadZone.tabIndex = on ? -1 : 0; }
   if (this.fileInput) this.fileInput.disabled = on;
+  if (this.retryScriptBtn) this.retryScriptBtn.disabled = on;
+  if (this.retrySummaryBtn) this.retrySummaryBtn.disabled = on;
+  if (this.retryTranslationBtn) this.retryTranslationBtn.disabled = on;
 },
 
 _showError(msg) {
@@ -173,7 +176,15 @@ _showError(msg) {
 
 _hideError() { this.errorBanner.classList.remove('show'); },
 
-_debounce(fn, ms) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); }; }
+_debounce(fn, ms) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); }; },
+
+// Shared exclusive accordion: closes siblings, toggles target. Returns true if opened.
+_accordionToggle(card, container, openClass) {
+  const wasOpen = card.classList.contains(openClass);
+  container.querySelectorAll(`.${openClass}`).forEach(c => c.classList.remove(openClass));
+  if (!wasOpen) card.classList.add(openClass);
+  return !wasOpen;
+},
 
 /* ═══════════════════════════════════════════════════════════
    Download-only page
