@@ -229,9 +229,9 @@ async _rssImportJsonFile(file) {
 
 async _rssLoadFeeds() {
   this._rssFeeds = this._rssSummaries(await this._rssReadStore());
-  this._rssFilterFeeds();
   if (this.rssSearchInput) this.rssSearchInput.value = '';
   if (this.rssSearchRow) this.rssSearchRow.style.display = this._rssFeeds.length ? 'block' : 'none';
+  this._rssFilterFeeds();
 },
 
 _rssFilterFeeds() {
@@ -246,6 +246,7 @@ _rssRenderFeeds(feeds) {
     this.feedList.innerHTML = `<div class="rss-empty"><div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div><p>${this.t('rss_empty')}</p></div>`;
     if (this.rssSummaryBar) this.rssSummaryBar.style.display = 'none';
     if (this.rssSearchRow) this.rssSearchRow.style.display = 'none';
+    this._rssRenderEmptyEntries('选择一个订阅查看条目。');
     return;
   }
   if (this.rssSearchRow) this.rssSearchRow.style.display = 'block';
@@ -255,8 +256,11 @@ _rssRenderFeeds(feeds) {
     this.rssSummaryBar.style.display = 'flex';
     this.rssSummaryText.textContent = `${this.t('rss_total')(fullFeeds.length, totalEntries, totalNew)}`;
   }
+  if (this._rssActiveFeedId && !feeds.some(f => f.id === this._rssActiveFeedId)) this._rssActiveFeedId = '';
+  if (!this._rssActiveFeedId && feeds.length) this._rssActiveFeedId = feeds[0].id;
   if (!feeds.length) {
     this.feedList.innerHTML = `<div class="rss-empty"><div class="rss-empty-icon"><i class="fas fa-search"></i></div><p>${this.t('rss_no_match')}</p></div>`;
+    this._rssRenderEmptyEntries(this.t('rss_no_match'));
     return;
   }
   this.feedList.innerHTML = feeds.map(f => {
@@ -264,7 +268,7 @@ _rssRenderFeeds(feeds) {
     const errorInfo = f.last_error ? `<span style="color:var(--error);font-size:10px;" title="${this._escapeHtml(f.last_error)}"><i class="fas fa-triangle-exclamation"></i> ${this.t('rss_refresh_failed')}</span>` : '';
     const newBadge = f.new_count > 0 ? `<span class="badge" style="background:var(--accent);">${this.t('new_count')(f.new_count)}</span>` : '';
     return `
-    <div class="feed-card" data-feed-id="${f.id}">
+    <div class="feed-card${f.id === this._rssActiveFeedId ? ' active' : ''}" data-feed-id="${f.id}">
       <div class="feed-card-header">
         <div>
           <div class="feed-card-title">
@@ -286,20 +290,14 @@ _rssRenderFeeds(feeds) {
           </button>
         </div>
       </div>
-      <div class="feed-entries" id="entries-${f.id}">
-        <div style="text-align:center;padding:20px;color:var(--text-dim);">${this.t('expand_entries_hint')}</div>
-      </div>
     </div>
   `}).join('');
 
   this.feedList.querySelectorAll('.feed-card').forEach(card => {
-    const header = card.querySelector('.feed-card-header');
-    if (!header) return;
-    header.addEventListener('click', (e) => {
+    card.addEventListener('click', (e) => {
       if (e.target.closest('[data-action]')) return;
-      if (this._accordionToggle(card, this.feedList, 'expanded')) {
-        this._rssLoadEntries(card.dataset.feedId);
-      }
+      this._rssActiveFeedId = card.dataset.feedId;
+      this._rssRenderFeeds(feeds);
     });
   });
 
@@ -316,34 +314,48 @@ _rssRenderFeeds(feeds) {
       this._rssRefreshFeed(btn.dataset.feedId);
     });
   });
+
+  this._rssLoadEntries(this._rssActiveFeedId);
 },
 
 async _rssLoadEntries(feedId) {
-  const container = document.getElementById('entries-' + feedId);
+  const container = this.rssEntryPane;
   if (!container) return;
+  if (!feedId) { this._rssRenderEmptyEntries('选择一个订阅查看条目。'); return; }
   const feed = (await this._rssReadStore()).find(f => f.id === feedId);
-  if (!feed) { container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--error);">${this.t('feed_missing')}</div>`; return; }
+  if (!feed) { container.innerHTML = `<div class="detail-empty"><i class="fas fa-triangle-exclamation"></i><p>${this.t('feed_missing')}</p></div>`; return; }
   const entries = (feed.entries || []).slice().sort((a, b) => (b.published || '').localeCompare(a.published || ''));
-  container.innerHTML = entries.length ? entries.map(e => {
-    const isSummarized = e.processed === 'summarized';
-    const isDownloaded = e.processed === 'downloaded';
-    const hasAudio = Boolean(e.enclosure_url);
-    return `
-    <div class="entry-item">
-      <span class="entry-title" title="${this._escapeHtml(e.title)}">
-        ${isSummarized ? '<i class="fas fa-file-lines"></i> ' : isDownloaded ? '<i class="fas fa-circle-down"></i> ' : ''}${this._escapeHtml(e.title)}
-      </span>
-      <div class="entry-actions">
-        <button class="btn-sm primary" data-action="summarize" data-feed="${feedId}" data-entry="${e.id}">
-          ${isSummarized ? this.t('resummarize') : this.t('summarize')}
-        </button>
-        ${hasAudio ? `
-        <button class="btn-sm" data-action="download-entry" data-feed="${feedId}" data-entry="${e.id}">
-          ${isDownloaded ? this.t('redownload') : this.t('nav_download')}
-        </button>` : ''}
+  const lastChecked = feed.last_checked ? new Date(feed.last_checked).toLocaleString() : this.t('never_updated');
+  container.innerHTML = `
+    <div class="detail-head">
+      <div class="detail-title">${this._escapeHtml(feed.title || 'RSS')}</div>
+      <div class="detail-meta">
+        <span class="feed-card-badge">${String(feed.type || 'rss').toUpperCase()}</span>
+        <span>${this.t('item_count')(entries.length)}</span>
+        <span>${this.t('updated')} ${lastChecked}</span>
       </div>
     </div>
-  `}).join('') : `<div style="text-align:center;padding:20px;color:var(--text-dim);">${this.t('no_entries')}</div>`;
+    ${entries.length ? entries.map(e => {
+      const isSummarized = e.processed === 'summarized';
+      const isDownloaded = e.processed === 'downloaded';
+      const hasAudio = Boolean(e.enclosure_url);
+      return `
+      <div class="entry-item">
+        <span class="entry-title" title="${this._escapeHtml(e.title)}">
+          ${isSummarized ? '<i class="fas fa-file-lines"></i> ' : isDownloaded ? '<i class="fas fa-circle-down"></i> ' : ''}${this._escapeHtml(e.title)}
+        </span>
+        <div class="entry-actions">
+          <button class="btn-sm primary" data-action="summarize" data-feed="${feedId}" data-entry="${e.id}">
+            ${isSummarized ? this.t('resummarize') : this.t('summarize')}
+          </button>
+          ${hasAudio ? `
+          <button class="btn-sm" data-action="download-entry" data-feed="${feedId}" data-entry="${e.id}">
+            ${isDownloaded ? this.t('redownload') : this.t('nav_download')}
+          </button>` : ''}
+        </div>
+      </div>
+    `}).join('') : `<div class="detail-empty"><i class="fas fa-inbox"></i><p>${this.t('no_entries')}</p></div>`}
+  `;
 
   container.querySelectorAll('.btn-sm').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -356,6 +368,11 @@ async _rssLoadEntries(feedId) {
       else if (action === 'download-entry') this._rssCreateTask(fid, eid, 'download');
     });
   });
+},
+
+_rssRenderEmptyEntries(message) {
+  if (!this.rssEntryPane) return;
+  this.rssEntryPane.innerHTML = `<div class="detail-empty"><i class="fas fa-list-ul"></i><p>${this._escapeHtml(message)}</p></div>`;
 },
 
 async _rssCreateTask(feedId, entryId, action) {
@@ -409,6 +426,7 @@ async _rssCreateTask(feedId, entryId, action) {
 
 async _rssDeleteFeed(feedId) {
   await this._rssWriteStore((await this._rssReadStore()).filter(f => f.id !== feedId));
+  if (this._rssActiveFeedId === feedId) this._rssActiveFeedId = '';
   await this._rssLoadFeeds();
 },
 
@@ -425,7 +443,7 @@ async _rssRefreshFeed(feedId) {
     feeds[idx] = merged;
     await this._rssWriteStore(feeds);
     await this._rssLoadFeeds();
-    if (card?.classList.contains('expanded')) await this._rssLoadEntries(feedId);
+    if (this._rssActiveFeedId === feedId) await this._rssLoadEntries(feedId);
     if (merged.new_count > 0) {
       this._rssShowError(this.t('found_new_items')(merged.new_count));
       setTimeout(() => this._rssHideError(), 3000);
