@@ -103,10 +103,7 @@ _historyRender() {
               <div class="history-meta"><span>${date}</span><span>${sourceHtml}</span></div>
             </div>
           </div>
-          <div class="history-actions">
-            <button class="btn-sm primary" data-action="open-history" data-history-id="${this._escapeHtml(item.id)}">${this.t('view')}</button>
-            <button class="btn-sm" data-action="delete-history" data-history-id="${this._escapeHtml(item.id)}">${this.t('delete')}</button>
-          </div>
+          <button class="btn-sm" data-action="delete-history" data-history-id="${this._escapeHtml(item.id)}">${this.t('delete')}</button>
         </div>
         <div class="history-body"><div class="md-content">${marked.parse(item.summary || '')}</div></div>
       </div>
@@ -118,16 +115,6 @@ _historyRender() {
     card.addEventListener('click', (e) => {
       if (e.target.closest('[data-action]') || e.target.closest('a') || e.target.closest('.history-checkbox')) return;
       this._accordionToggle(card, this.historyList, 'open');
-      this._historySyncViewButtons();
-    });
-  });
-  this.historyList.querySelectorAll('[data-action="open-history"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const card = btn.closest('.history-item');
-      if (!card) return;
-      this._accordionToggle(card, this.historyList, 'open');
-      this._historySyncViewButtons();
     });
   });
   this.historyList.querySelectorAll('[data-action="delete-history"]').forEach(btn => {
