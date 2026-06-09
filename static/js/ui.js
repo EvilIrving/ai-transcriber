@@ -86,9 +86,7 @@ async _fetchModels(silent = false) {
   if (!silent) this._setFetchStatus('', this.t('fetching_models'));
   try {
     const fd = new FormData(); fd.append('base_url', baseUrl); fd.append('api_key', apiKey);
-    const resp = await fetch(`${this.apiBase}/models`, { method: 'POST', body: fd });
-    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || `HTTP ${resp.status}`); }
-    const data = await resp.json();
+    const data = await this.api.fetchModels(fd);
     const models = data.data || data.models || [];
     this.modelSelect.innerHTML = `<option value="">${this.t('model_default')}</option>`;
     models.forEach(m => {
@@ -139,16 +137,15 @@ async _copyTabContent(type) {
 async _downloadFile(type) {
   if (!this.currentTaskId) { this._showError(this.t('error_no_download')); return; }
   try {
-    const r = await fetch(`${this.apiBase}/task-status/${this.currentTaskId}`);
-    if (!r.ok) throw new Error(this.t('request_failed'));
-    const task = await r.json();
+    const task = await this.api.taskStatus(this.currentTaskId)
+      .catch(() => { throw new Error(this.t('request_failed')); });
     let filename;
     if (type === 'script')      filename = task.script_path ? task.script_path.split('/').pop() : `transcript_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
     else if (type === 'summary') filename = task.summary_path ? task.summary_path.split('/').pop() : `summary_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
     else if (type === 'translation') filename = task.translation_path ? task.translation_path.split('/').pop() : `translation_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
     else throw new Error(this.t('unknown_error'));
     const a = document.createElement('a');
-    a.href = `${this.apiBase}/download/${encodeURIComponent(filename)}`;
+    a.href = this.api.mdFileUrl(filename);
     a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
   } catch (e) { this._showError(this.t('error_download_failed') + e.message); }
 }
