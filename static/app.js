@@ -129,6 +129,8 @@ class VideoTranscriber {
     this.rssErrorMsg        = document.getElementById('rssErrorMsg');
     this.rssSummaryBar      = document.getElementById('rssSummaryBar');
     this.rssSummaryText     = document.getElementById('rssSummaryText');
+    this.rssSearchInput     = document.getElementById('rssSearchInput');
+    this.rssSearchRow       = document.getElementById('rssSearchRow');
 
     // Summary history page
     this.historySearch      = document.getElementById('historySearch');
@@ -221,6 +223,7 @@ class VideoTranscriber {
       this.rssImportJsonBtn.addEventListener('click', () => this.rssJsonFileInput.click());
       this.rssJsonFileInput.addEventListener('change', () => this._rssImportJsonFile(this.rssJsonFileInput.files && this.rssJsonFileInput.files[0]));
     }
+    if (this.rssSearchInput) this.rssSearchInput.addEventListener('input', this._debounce(() => this._rssFilterFeeds(), 200));
     // Summary history page
     if (this.historySearch) this.historySearch.addEventListener('input', this._debounce(() => this._historyRender(), 120));
   }
