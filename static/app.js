@@ -61,9 +61,6 @@ class VideoTranscriber {
     this.progStageList      = document.getElementById('progStageList');
     this.progStagePct       = document.getElementById('progStagePct');
     this.resultsPanel       = document.getElementById('resultsPanel');
-    this.sourceRow          = document.getElementById('sourceRow');
-    this.sourceText         = document.getElementById('sourceText');
-    this.sourceClear        = document.getElementById('sourceClear');
     this.scriptContent      = document.getElementById('scriptContent');
     this.summaryContent     = document.getElementById('summaryContent');
     this.translationContent = document.getElementById('translationContent');
@@ -144,12 +141,14 @@ class VideoTranscriber {
     this.rssSummaryText     = document.getElementById('rssSummaryText');
     this.rssSearchInput     = document.getElementById('rssSearchInput');
     this.rssSearchRow       = document.getElementById('rssSearchRow');
+    this.rssEntryPane       = document.getElementById('rssEntryPane');
 
     // Summary history page
     this.historySearch        = document.getElementById('historySearch');
     this.historyList          = document.getElementById('historyList');
     this.historySelectBtn     = document.getElementById('historySelectBtn');
     this.historyDeleteSelBar  = document.getElementById('historyDeleteSelBar');
+    this.historyDetail        = document.getElementById('historyDetail');
     this.historyFilterBtns  = document.querySelectorAll('.history-filter');
   }
 
@@ -201,7 +200,6 @@ class VideoTranscriber {
     this.retryScriptBtn.addEventListener('click',      () => this._retryTranscription());
     this.retrySummaryBtn.addEventListener('click',     () => this._regenerateSummaryInPlace());
     this.retryTranslationBtn.addEventListener('click', () => this._retryTranscription());
-    if (this.sourceClear) this.sourceClear.addEventListener('click', () => this._clearResultsArea());
     // Upload
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => { e.stopPropagation(); this.fileInput.click(); });

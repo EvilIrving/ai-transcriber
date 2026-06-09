@@ -65,6 +65,7 @@ async _historyLoad() {
       });
     });
     this.historyItems = (items || []).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    if (this._historyActiveId && !this.historyItems.some(item => item.id === this._historyActiveId)) this._historyActiveId = '';
     this._historySelected = new Set();
     this._updateHistorySelectUI();
     this._historyRender();
@@ -76,13 +77,17 @@ async _historyLoad() {
 _historyRender() {
   if (!this.historyList) return;
   const q = (this.historySearch?.value || '').trim().toLowerCase();
-  const filteredBySource = this.historyItems.filter(item => this._historyMatchesSourceFilter(item));
-  const items = q ? filteredBySource.filter(item => [item.title, item.source, item.summary].join('\n').toLowerCase().includes(q)) : filteredBySource;
+  const items = this._historyVisibleItems();
+  if (this._historyActiveId && !items.some(item => item.id === this._historyActiveId)) this._historyActiveId = '';
+  if (!this._historyActiveId && items.length) this._historyActiveId = items[0].id;
+
   if (!items.length) {
     const msg = q ? this.t('no_matches') : this.t('history_empty');
     this.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon"><i class="fas fa-box-archive"></i></div><p>${msg}</p></div>`;
+    this._historyRenderDetail(null);
     return;
   }
+
   const inSelect = this._historySelectMode;
   this.historyList.innerHTML = items.map(item => {
     const date = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
@@ -95,7 +100,7 @@ _historyRender() {
       ? `<input type="checkbox" class="history-checkbox" data-history-id="${this._escapeHtml(item.id)}"${checked}>`
       : '';
     return `
-      <div class="history-item${inSelect ? ' select-mode' : ''}" data-history-id="${this._escapeHtml(item.id)}">
+      <div class="history-item${inSelect ? ' select-mode' : ''}${item.id === this._historyActiveId ? ' active' : ''}" data-history-id="${this._escapeHtml(item.id)}">
         <div class="history-head">
           <div class="history-head-left">
             ${checkboxHtml}
@@ -106,18 +111,15 @@ _historyRender() {
           </div>
           <button class="btn-sm" data-action="delete-history" data-history-id="${this._escapeHtml(item.id)}">${this.t('delete')}</button>
         </div>
-        <div class="history-body"><div class="md-content">${marked.parse(item.summary || '')}</div></div>
       </div>
     `;
   }).join('');
 
-  // Click title / head area to expand (exclusive accordion)
   this.historyList.querySelectorAll('.history-item').forEach(card => {
-    const head = card.querySelector('.history-head');
-    if (!head) return;
-    head.addEventListener('click', (e) => {
+    card.addEventListener('click', (e) => {
       if (e.target.closest('[data-action]') || e.target.closest('a') || e.target.closest('.history-checkbox')) return;
-      this._accordionToggle(card, this.historyList, 'open');
+      this._historyActiveId = card.dataset.historyId;
+      this._historyRender();
     });
   });
   this.historyList.querySelectorAll('[data-action="delete-history"]').forEach(btn => {
@@ -126,7 +128,6 @@ _historyRender() {
     });
   });
 
-  // Checkbox toggle in select mode
   if (inSelect) {
     this.historyList.querySelectorAll('.history-checkbox').forEach(cb => {
       cb.addEventListener('click', (e) => {
@@ -138,6 +139,27 @@ _historyRender() {
       });
     });
   }
+
+  this._historyRenderDetail(items.find(item => item.id === this._historyActiveId));
+},
+
+_historyRenderDetail(item) {
+  if (!this.historyDetail) return;
+  if (!item) {
+    this.historyDetail.innerHTML = `<div class="detail-empty"><i class="fas fa-book-open"></i><p>选择一条历史摘要阅读。</p></div>`;
+    return;
+  }
+  const date = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
+  const source = item.source || '';
+  const sourceHtml = source && /^https?:\/\//i.test(source)
+    ? `<a class="history-source" href="${this._escapeHtml(source)}" target="_blank" rel="noreferrer">${this.t('source_link')}</a>`
+    : this._escapeHtml(source || item.sourceType || this.t('local_task'));
+  this.historyDetail.innerHTML = `
+    <div class="detail-head">
+      <div class="detail-meta"><span>${date}</span><span>${sourceHtml}</span></div>
+    </div>
+    <div class="md-content">${marked.parse(item.summary || '')}</div>
+  `;
 },
 
 
@@ -207,6 +229,7 @@ async _historyDeleteSelected() {
       for (const id of ids) store.delete(id);
     });
     this.historyItems = this.historyItems.filter(item => !this._historySelected.has(item.id));
+    if (ids.includes(this._historyActiveId)) this._historyActiveId = '';
     this._historySelected.clear();
     this._updateHistorySelectUI();
     this._historyRender();
@@ -220,6 +243,7 @@ async _historyDelete(id) {
   try {
     await this._historyTx('readwrite', (store) => store.delete(id));
     this.historyItems = this.historyItems.filter(item => item.id !== id);
+    if (this._historyActiveId === id) this._historyActiveId = '';
     this._historySelected.delete(id);
     this._updateHistorySelectUI();
     this._historyRender();

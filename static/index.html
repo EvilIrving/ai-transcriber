@@ -206,11 +206,6 @@
     .fetch-status.err { color: var(--error); }
     /* Result panel */
     .result-panel { background: var(--surface); border: 1.5px dashed var(--border-light); border-radius: var(--r); margin-top: 14px; overflow: hidden; }
-    .source-row { display:none; align-items:center; justify-content:space-between; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); color:var(--text-muted); font-size:12px; background:var(--surface-2); }
-    .source-row.show { display:flex; }
-    .source-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .source-clear { background:none; border:0; color:var(--text-dim); cursor:pointer; padding:3px 6px; border-radius:6px; }
-    .source-clear:hover { color:var(--error); background:var(--surface-3); }
     .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 64px 24px; gap: 14px; color: var(--text-muted); }
     .empty-state .es-icon { font-size: 2.4rem; }
     .empty-state .es-text { font-size: 14px; }
@@ -352,10 +347,11 @@
     }
     .feed-card:hover { border-color: var(--accent-dim); }
     .feed-card.expanded { border-color: var(--accent-dim); box-shadow: 0 0 0 1px rgba(192,120,48,.1); }
-    .feed-card-header { display: flex; justify-content: space-between; align-items: center; cursor:pointer; border-radius:var(--r-sm); }
+    .feed-card-header { display: flex; justify-content: space-between; align-items: center; cursor:pointer; border-radius:var(--r-sm); gap: 10px; }
+    .feed-card-header > div:first-child { min-width: 0; }
     .feed-card.expanded .feed-card-header { position:sticky; top:0; z-index:2; background:var(--surface); padding-bottom:10px; box-shadow:0 1px 0 var(--border); }
-    .feed-card-title { font-weight: 650; font-size: 14px; }
-    .feed-card-meta { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 10px; align-items: center; }
+    .feed-card-title { font-weight: 650; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .feed-card-meta { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 10px; align-items: center; overflow: hidden; }
     .feed-card-badge { font-size: 9.5px; padding: 1.5px 7px; border-radius: 10px; background: var(--surface-3); color: var(--text-muted); }
     .feed-card-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 4px 6px; }
     .feed-card-del:hover { color: var(--error); }
@@ -374,7 +370,6 @@
     }
     .entry-item:hover { background: var(--surface-2); }
     .entry-item.processed .entry-title { color: var(--text-dim); }
-    .entry-item + .entry-item { border-top: 1px solid var(--border); }
     .entry-title { font-size: 12.5px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .entry-actions { display: flex; gap: 5px; flex-shrink: 0; }
     .btn-sm {
@@ -429,9 +424,9 @@
     }
     .history-item.open .history-body::-webkit-scrollbar { display:none; }
     body.list-page-active .main {
-      flex: 1; min-height: 0; width: 100%;
+      flex: 1; min-height: 0; width: 100%; max-width: 1180px;
       display: flex; flex-direction: column;
-      padding-bottom: 24px;
+      padding: 24px 24px 24px;
     }
     body.list-page-active #pageHistory.active,
     body.list-page-active #pageRss.active {
@@ -441,17 +436,34 @@
     body.list-page-active #pageHistory .page-topbar,
     body.list-page-active #pageRss .page-topbar,
     body.list-page-active .history-toolbar,
+    body.list-page-active .history-filter-row,
     body.list-page-active .history-delete-sel-bar,
     body.list-page-active .rss-add-row,
     body.list-page-active .rss-summary-bar,
     body.list-page-active .rss-search-row {
       flex-shrink: 0;
     }
-    body.list-page-active .history-list,
-    body.list-page-active .feed-list {
+    .split-page {
       flex: 1; min-height: 0;
-      overflow-y: auto; padding-right: 4px;
+      display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+      gap: 14px;
     }
+    .split-list, .split-detail {
+      min-height: 0; overflow-y: auto;
+    }
+    .split-list { padding-right: 4px; }
+    .split-detail {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 18px 20px;
+    }
+    .detail-empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text-dim); text-align: center; }
+    .detail-empty i { font-size: 2rem; }
+    .detail-head { border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 14px; }
+    .detail-title { font-size: 18px; font-weight: 720; line-height: 1.35; letter-spacing: -0.01em; }
+    .detail-meta { font-size: 11px; color: var(--text-dim); margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .history-item.active, .feed-card.active { border-color: var(--accent); background: rgba(192,120,48,.06); }
+    .history-item.active .history-title, .feed-card.active .feed-card-title { color: var(--accent-text); }
+    .rss-entry-pane { display: flex; flex-direction: column; gap: 6px; }
     .history-source { color: var(--text-muted); text-decoration: none; }
     .history-source:hover { color: var(--accent-text); }
     .history-empty { text-align: center; padding: 48px 20px; color: var(--text-dim); }
@@ -470,8 +482,14 @@
       .nav-logo-text { animation:none; color:var(--text); background:none; }
       .connecting-dots span, .spinner { animation:none; }
     }
+    @media (max-width: 760px) {
+      .split-page { grid-template-columns: 1fr; overflow-y: auto; }
+      .split-list, .split-detail { overflow-y: visible; }
+      .split-detail { min-height: 260px; }
+    }
     @media (max-width: 560px) {
       .navbar { padding: 12px 16px; flex-wrap:wrap; } .main { padding: 36px 16px 60px; }
+      body.list-page-active .main { padding: 18px 16px 24px; }
       .input-row { flex-direction: column; } .btn-go { justify-content: center; }
       .rss-add-row { flex-direction: column; }
       .page-topbar { flex-wrap: wrap; }
@@ -649,11 +667,6 @@
         <div class="prog-msg" id="progressMessage"></div>
       </div>
 
-      <div class="source-row" id="sourceRow">
-        <span class="source-text" id="sourceText"></span>
-        <button class="source-clear" id="sourceClear" title="Clear"><i class="fas fa-xmark"></i></button>
-      </div>
-
       <div class="results-panel" id="resultsPanel">
 
         <div class="tab-bar">
@@ -823,10 +836,18 @@
 
     <div class="history-delete-sel-bar" id="historyDeleteSelBar"></div>
 
-    <div class="history-list" id="historyList">
-      <div class="history-empty">
-        <div class="history-empty-icon"><i class="fas fa-box-archive"></i></div>
-        <p data-i18n="history_empty">暂无历史。完成的转录内容将在这里显示。</p>
+    <div class="split-page history-split">
+      <div class="history-list split-list" id="historyList">
+        <div class="history-empty">
+          <div class="history-empty-icon"><i class="fas fa-box-archive"></i></div>
+          <p data-i18n="history_empty">暂无历史。完成的转录内容将在这里显示。</p>
+        </div>
+      </div>
+      <div class="split-detail" id="historyDetail">
+        <div class="detail-empty">
+          <i class="fas fa-book-open"></i>
+          <p>选择一条历史摘要阅读。</p>
+        </div>
       </div>
     </div>
   </div>
@@ -878,10 +899,18 @@
       </div>
     </div>
 
-    <div class="feed-list" id="feedList">
-      <div class="rss-empty">
-        <div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div>
-        <p data-i18n="rss_empty">暂无订阅。在上方粘贴 RSS 链接，或导入 JSON 文件。</p>
+    <div class="split-page rss-split">
+      <div class="feed-list split-list" id="feedList">
+        <div class="rss-empty">
+          <div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div>
+          <p data-i18n="rss_empty">暂无订阅。在上方粘贴 RSS 链接，或导入 JSON 文件。</p>
+        </div>
+      </div>
+      <div class="split-detail rss-entry-pane" id="rssEntryPane">
+        <div class="detail-empty">
+          <i class="fas fa-list-ul"></i>
+          <p>选择一个订阅查看条目。</p>
+        </div>
       </div>
     </div>
   </div>
