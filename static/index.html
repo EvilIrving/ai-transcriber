@@ -217,6 +217,11 @@
     .btn-copy-pane:hover { border-color: var(--accent-dim); color: var(--accent-text); }
     .btn-copy-pane.copied { color: var(--success); border-color: rgba(106,184,122,.4); }
     .tab-pane-scroll { max-height: 520px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+    /* Global scrollbar (inside .main) */
+    .main ::-webkit-scrollbar { width: 5px; }
+    .main ::-webkit-scrollbar-track { background: transparent; }
+    .main ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+    .main * { scrollbar-width: thin; scrollbar-color: var(--border-light) transparent; }
     .tab-pane-scroll::-webkit-scrollbar { display: none; }
     .md-content { font-size: 14px; line-height: 1.8; color: var(--text); }
     .md-content h1 { font-size: 1.35rem; margin: 0 0 14px; }
@@ -269,9 +274,6 @@
       max-height: calc(100vh - 330px); min-height: 200px;
       overflow-y: auto; padding-right: 4px;
     }
-    .feed-list::-webkit-scrollbar { width: 5px; }
-    .feed-list::-webkit-scrollbar-track { background: transparent; }
-    .feed-list::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
     .feed-card {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
       padding: 14px 16px; cursor: pointer; transition: border-color .2s, box-shadow .2s;
@@ -293,9 +295,6 @@
       max-height: 300px; overflow-y: auto; border-top-color: var(--border);
       margin-top: 12px; padding-top: 8px;
     }
-    .feed-entries::-webkit-scrollbar { width: 5px; }
-    .feed-entries::-webkit-scrollbar-track { background: transparent; }
-    .feed-entries::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
     .entry-item {
       display: flex; justify-content: space-between; align-items: center;
       padding: 9px 6px; border-radius: var(--r-sm); gap: 10px;
@@ -317,20 +316,32 @@
     .rss-empty { text-align: center; padding: 40px 20px; color: var(--text-dim); }
     .rss-empty .rss-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
     /* Summary history */
-    .history-toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
+    .history-toolbar { display: flex; gap: 10px; margin-bottom: 12px; }
     .history-search { flex: 1; }
-    .history-list { display: flex; flex-direction: column; gap: 10px; }
+    .history-list {
+      display: flex; flex-direction: column; gap: 8px;
+      max-height: calc(100vh - 280px); min-height: 200px;
+      overflow-y: auto; padding-right: 4px;
+    }
     .history-item {
+      cursor: pointer; user-select: none; flex-shrink: 0;
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
-      padding: 15px 17px; transition: border-color .2s;
+      padding: 14px 16px; transition: border-color .2s;
     }
     .history-item:hover { border-color: var(--accent-dim); }
+    .history-item.open { border-color: var(--accent-dim); }
     .history-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-    .history-title { font-size: 15px; font-weight: 650; line-height: 1.35; word-break: break-word; }
-    .history-meta { font-size: 11px; color: var(--text-dim); margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .history-title { font-size: 14px; font-weight: 650; line-height: 1.35; word-break: break-word; }
+    .history-meta { font-size: 10.5px; color: var(--text-dim); margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
     .history-actions { display: flex; gap: 6px; flex-shrink: 0; }
-    .history-body { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
-    .history-item.open .history-body { display: block; }
+    .history-body {
+      max-height: 0; overflow: hidden; margin-top: 0; padding-top: 0; border-top: 1px solid transparent;
+      transition: max-height .3s ease-out, margin-top .3s, padding-top .3s, border-color .3s;
+    }
+    .history-item.open .history-body {
+      max-height: 400px; overflow-y: auto;
+      margin-top: 12px; padding-top: 12px; border-top-color: var(--border);
+    }
     .history-source { color: var(--text-muted); text-decoration: none; }
     .history-source:hover { color: var(--accent-text); }
     .history-empty { text-align: center; padding: 48px 20px; color: var(--text-dim); }
@@ -530,15 +541,15 @@
           <button class="tab-btn" data-tab="translation" id="translationTabBtn" style="display:none;"><span data-i18n="translation">Translation</span></button>
         </div>
         <div id="scriptTab" class="tab-pane active">
-          <div class="tab-pane-head"><button class="btn-copy-pane" id="copyScript" title="复制转录文本" data-i18n-title="copy_transcript"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
+          <div class="tab-pane-head"><button class="btn-copy-pane" id="retryScript" title="重新生成" data-i18n-title="retry"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button><button class="btn-copy-pane" id="copyScript" title="复制转录文本" data-i18n-title="copy_transcript"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
           <div class="tab-pane-scroll"><div class="md-content" id="scriptContent"></div></div>
         </div>
         <div id="summaryTab" class="tab-pane">
-          <div class="tab-pane-head"><button class="btn-copy-pane" id="copySummary" title="复制摘要" data-i18n-title="copy_summary"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
+          <div class="tab-pane-head"><button class="btn-copy-pane" id="retrySummary" title="重新生成" data-i18n-title="retry"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button><button class="btn-copy-pane" id="copySummary" title="复制摘要" data-i18n-title="copy_summary"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
           <div class="tab-pane-scroll"><div class="md-content" id="summaryContent"></div></div>
         </div>
         <div id="translationTab" class="tab-pane">
-          <div class="tab-pane-head"><button class="btn-copy-pane" id="copyTranslation" title="复制翻译" data-i18n-title="copy_translation"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
+          <div class="tab-pane-head"><button class="btn-copy-pane" id="retryTranslation" title="重新生成" data-i18n-title="retry"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button><button class="btn-copy-pane" id="copyTranslation" title="复制翻译" data-i18n-title="copy_translation"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
           <div class="tab-pane-scroll"><div class="md-content" id="translationContent"></div></div>
         </div>
       </div>

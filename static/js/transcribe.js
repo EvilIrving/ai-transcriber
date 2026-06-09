@@ -246,4 +246,41 @@ _showProgressTranscribe() {
 _hideProgressTranscribe() { this.progressPanel.classList.remove('show'); }
 
 /* ── Copy to clipboard ──────────────────────────────── */
+
+/* ── Retry ──────────────────────────────────────────── */
+
+async _retryTranscription() {
+  if (!this.currentTaskId) { this._showError(this.t('processing_error')); return; }
+  if (this.isProcessing) return;
+
+  this._setLoading(true);
+  this._showProgressTranscribe();
+  this.progStageName.textContent = this.t('retrying');
+  this.progressMessage.textContent = this.t('retrying');
+
+  try {
+    const fd = this._buildFormData('');
+    // 追加 two_step 开关
+    fd.append('use_two_step', this.useTwoStep ? 'true' : 'false');
+
+    const resp = await fetch(`${this.apiBase}/retry/${encodeURIComponent(this.currentTaskId)}`, {
+      method: 'POST',
+      body: fd,
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || this.t('request_failed'));
+    }
+    const data = await resp.json();
+    this.currentTaskId = data.task_id;
+    this.partialSummaryShown = false;
+    this._initSP();
+    this._startSSE();
+    this._saveSettings();
+  } catch (err) {
+    this._showError(this.t('error_processing_failed') + err.message);
+    this._setLoading(false);
+    this._hideProgressTranscribe();
+  }
+}
 };

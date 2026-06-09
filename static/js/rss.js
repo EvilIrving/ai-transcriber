@@ -297,12 +297,8 @@ _rssRenderFeeds(feeds) {
   this.feedList.querySelectorAll('.feed-card').forEach(card => {
     card.addEventListener('click', (e) => {
       if (e.target.closest('[data-action]')) return;
-      const wasExpanded = card.classList.contains('expanded');
-      this.feedList.querySelectorAll('.feed-card.expanded').forEach(c => c.classList.remove('expanded'));
-      if (!wasExpanded) {
-        card.classList.add('expanded');
-        const fid = card.dataset.feedId;
-        this._rssLoadEntries(fid);
+      if (this._accordionToggle(card, this.feedList, 'expanded')) {
+        this._rssLoadEntries(card.dataset.feedId);
       }
     });
   });
@@ -332,29 +328,27 @@ async _rssLoadEntries(feedId) {
     const isSummarized = e.processed === 'summarized';
     const isDownloaded = e.processed === 'downloaded';
     const hasAudio = Boolean(e.enclosure_url);
-    const processedClass = isSummarized || isDownloaded ? ' processed' : '';
     return `
-    <div class="entry-item${processedClass}">
+    <div class="entry-item">
       <span class="entry-title" title="${this._escapeHtml(e.title)}">
         ${isSummarized ? '<i class="fas fa-file-lines"></i> ' : isDownloaded ? '<i class="fas fa-circle-down"></i> ' : ''}${this._escapeHtml(e.title)}
       </span>
       <div class="entry-actions">
-        <button class="btn-sm primary" data-action="summarize" data-feed="${feedId}" data-entry="${e.id}"
-          ${isSummarized ? 'disabled' : ''}>
-          ${isSummarized ? this.t('summarized') : this.t('summarize')}
+        <button class="btn-sm primary" data-action="summarize" data-feed="${feedId}" data-entry="${e.id}">
+          ${isSummarized ? this.t('resummarize') : this.t('summarize')}
         </button>
         ${hasAudio ? `
-        <button class="btn-sm" data-action="download-entry" data-feed="${feedId}" data-entry="${e.id}"
-          ${isDownloaded ? 'disabled' : ''}>
-          ${isDownloaded ? this.t('downloaded') : this.t('nav_download')}
+        <button class="btn-sm" data-action="download-entry" data-feed="${feedId}" data-entry="${e.id}">
+          ${isDownloaded ? this.t('redownload') : this.t('nav_download')}
         </button>` : ''}
       </div>
     </div>
   `}).join('') : `<div style="text-align:center;padding:20px;color:var(--text-dim);">${this.t('no_entries')}</div>`;
 
-  container.querySelectorAll('.btn-sm:not([disabled])').forEach(btn => {
+  container.querySelectorAll('.btn-sm').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (btn.disabled) return;
       const action = btn.dataset.action;
       const fid = btn.dataset.feed;
       const eid = btn.dataset.entry;
@@ -365,6 +359,8 @@ async _rssLoadEntries(feedId) {
 },
 
 async _rssCreateTask(feedId, entryId, action) {
+  // 防止重复点击创建多个任务
+  if (this.isProcessing) return;
   try {
     const feed = (await this._rssReadStore()).find(f => f.id === feedId);
     const entry = feed?.entries?.find(e => e.id === entryId);
@@ -393,7 +389,15 @@ async _rssCreateTask(feedId, entryId, action) {
     this.currentSource = { type: 'rss', value: entry.link || entry.enclosure_url || '', title: entry.title || feed.title || '' };
     this._switchPage('transcribe');
     this.currentTaskId = data.task_id;
-    this._showProgressTranscribe();
+    // 直接操作 DOM 展示进度（避免跨 mixin 方法引用失败）
+    if (this.emptyState) this.emptyState.style.display = 'none';
+    if (this.resultsPanel) this.resultsPanel.classList.remove('show');
+    if (this.progressPanel) this.progressPanel.classList.add('show');
+    if (this.progStageName) this.progStageName.textContent = this.t('preparing');
+    if (this.modeBadge) { this.modeBadge.style.display = 'none'; this.modeBadge.className = 'mode-badge'; }
+    if (this.progressFill) { this.progressFill.classList.remove('subtitle-mode'); this.progressFill.style.width = '0%'; }
+    if (this.progressStatus) this.progressStatus.textContent = '0%';
+    if (this.progressMessage) this.progressMessage.textContent = '';
     this._initSP();
     this._startSSE();
     this._setLoading(true);

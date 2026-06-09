@@ -141,6 +141,11 @@ STAGE_WEIGHTS = {
         ("识别资源", 15, "正在识别视频资源"),
         ("下载", 85, "正在下载视频"),
     ],
+    "retry": [
+        ("阅读内容", 15, "正在阅读内容"),
+        ("生成摘要prompt", 35, "正在生成摘要prompt"),
+        ("生成摘要", 50, "正在生成摘要"),
+    ],
 }
 
 # 本地上传：允许的类型与大小上限（MB），可用环境变量 UPLOAD_MAX_MB 调整
@@ -1351,6 +1356,93 @@ async def get_active_tasks():
         "processing_urls": processing_count,
         "task_ids": list(active_tasks.keys())
     }
+
+
+@app.post("/api/retry/{task_id}")
+async def retry_task(
+    task_id: str,
+    api_key: str = Form(default=""),
+    model_base_url: str = Form(default=""),
+    model_id: str = Form(default=""),
+    summary_language: str = Form(default="zh"),
+    use_two_step: bool = Form(default=True),
+):
+    """重新生成：基于原始转录重新执行优化+摘要管线，覆盖旧结果。"""
+    try:
+        if task_id not in tasks:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+        old_task = tasks[task_id]
+
+        # 读取原始转录文本
+        raw_script_file = old_task.get("raw_script_file")
+        if not raw_script_file:
+            raise HTTPException(status_code=400, detail="未找到原始转录文件，无法重试")
+
+        raw_path = TEMP_DIR / raw_script_file
+        if not raw_path.exists():
+            raise HTTPException(status_code=400, detail="原始转录文件已丢失")
+
+        raw_script = raw_path.read_text(encoding="utf-8")
+        # 移除末尾 source 行 (原始文件末尾有 `\n\nsource: xxx`)
+        import re as _re
+        raw_script = _re.sub(r'\n\nsource:.*$', '', raw_script, flags=_re.DOTALL)
+
+        video_title = old_task.get("video_title", "Retry")
+        source_ref = old_task.get("url", "retry")
+
+        # 构造 Summarizer（优先用前端传入的 API 配置）
+        if api_key:
+            effective_url = model_base_url.rstrip("/") or None
+            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id or None)
+        else:
+            request_summarizer = summarizer
+
+        summary_lang = summary_language or old_task.get("summary_language", "zh")
+
+        # 创建新任务 ID，覆盖旧任务
+        new_task_id = str(uuid.uuid4())
+
+        tasks[new_task_id] = {
+            "status": "processing",
+            "progress": 0,
+            "message": "正在重试……",
+            "script": None,
+            "summary": None,
+            "error": None,
+            "url": source_ref,
+            "video_title": video_title,
+            "retry_of": task_id,
+        }
+        _init_task_stages(new_task_id, "retry")
+        save_tasks(tasks)
+
+        bg = asyncio.create_task(
+            _run_post_extract_pipeline(
+                task_id=new_task_id,
+                raw_script=raw_script,
+                video_title=video_title,
+                source_ref=source_ref,
+                summary_language=summary_lang,
+                request_summarizer=request_summarizer,
+                dedup_url=None,
+                api_key=api_key,
+                model_base_url=model_base_url,
+                model_id=model_id,
+                stage_offset=0,
+                use_two_step=use_two_step,
+            )
+        )
+        active_tasks[new_task_id] = bg
+
+        return {"task_id": new_task_id, "message": "重试任务已创建"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"重试任务失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -64,6 +64,9 @@ class VideoTranscriber {
     this.copyScriptBtn      = document.getElementById('copyScript');
     this.copySummaryBtn     = document.getElementById('copySummary');
     this.copyTranslationBtn = document.getElementById('copyTranslation');
+    this.retryScriptBtn      = document.getElementById('retryScript');
+    this.retrySummaryBtn     = document.getElementById('retrySummary');
+    this.retryTranslationBtn = document.getElementById('retryTranslation');
     this.translationTabBtn  = document.getElementById('translationTabBtn');
     this.tabBtns            = document.querySelectorAll('#pageTranscribe .tab-btn');
     this.tabPanes           = document.querySelectorAll('#pageTranscribe .tab-pane');
@@ -181,6 +184,10 @@ class VideoTranscriber {
     this.copyScriptBtn.addEventListener('click',      () => this._copyTabContent('script'));
     this.copySummaryBtn.addEventListener('click',     () => this._copyTabContent('summary'));
     this.copyTranslationBtn.addEventListener('click', () => this._copyTabContent('translation'));
+    // Retry buttons
+    this.retryScriptBtn.addEventListener('click',      () => this._retryTranscription());
+    this.retrySummaryBtn.addEventListener('click',     () => this._retryTranscription());
+    this.retryTranslationBtn.addEventListener('click', () => this._retryTranscription());
     // Upload
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => { e.stopPropagation(); this.fileInput.click(); });

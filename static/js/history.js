@@ -103,12 +103,21 @@ _historyRender() {
     `;
   }).join('');
 
+  // Click title / head area to expand (exclusive accordion)
+  this.historyList.querySelectorAll('.history-item').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('[data-action]') || e.target.closest('a')) return;
+      this._accordionToggle(card, this.historyList, 'open');
+      this._historySyncViewButtons();
+    });
+  });
   this.historyList.querySelectorAll('[data-action="open-history"]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const card = btn.closest('.history-item');
       if (!card) return;
-      const open = card.classList.toggle('open');
-      btn.textContent = open ? this.t('collapse') : this.t('view');
+      this._accordionToggle(card, this.historyList, 'open');
+      this._historySyncViewButtons();
     });
   });
   this.historyList.querySelectorAll('[data-action="delete-history"]').forEach(btn => {
