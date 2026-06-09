@@ -41,16 +41,6 @@ async _rssWriteStore(feeds) {
   });
 },
 
-async _rssFetchWithTimeout(url, options = {}, ms = 35000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-},
-
 _rssMergeFeed(oldFeed, newFeed) {
   const oldEntries = oldFeed?.entries || [];
   const oldStatus = new Map(oldEntries.filter(e => e.processed).map(e => [e.id, e.processed]));
@@ -83,10 +73,17 @@ _rssSummaries(feeds) {
 async _rssParseFeed(feedUrl) {
   const fd = new FormData();
   fd.append('feed_url', feedUrl);
-  const resp = await this._rssFetchWithTimeout(`${this.apiBase}/rss/parse`, { method: 'POST', body: fd });
-  if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || this.t('request_failed')); }
-  const data = await resp.json();
-  return data.feed;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 35000);
+  try {
+    const data = await this.api.rssParse(fd, controller.signal).catch((err) => {
+      if (err.name === 'AbortError') throw err;
+      throw new Error(err.detail || this.t('request_failed'));
+    });
+    return data.feed;
+  } finally {
+    clearTimeout(timer);
+  }
 },
 
 async _rssSubscribe() {
@@ -379,9 +376,9 @@ async _rssCreateTask(feedId, entryId, action) {
     if (baseUrl) fd.append('model_base_url', baseUrl);
     if (modelId) fd.append('model_id', modelId);
 
-    const resp = await fetch(`${this.apiBase}/rss/create-task`, { method: 'POST', body: fd });
-    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || this.t('request_failed')); }
-    const data = await resp.json();
+    const data = await this.api.rssCreateTask(fd).catch((err) => {
+      throw new Error(err.detail || this.t('request_failed'));
+    });
 
     entry.processed = action === 'download' ? 'downloaded' : 'summarized';
     await this._rssWriteStore((await this._rssReadStore()).map(f => f.id === feedId ? feed : f));

@@ -22,9 +22,9 @@ async _dwnDetectFormats() {
   this.dwnProgressPanel.classList.remove('show');
   try {
     const fd = new FormData(); fd.append('url', url);
-    const resp = await fetch(`${this.apiBase}/download-video/formats`, { method: 'POST', body: fd });
-    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || this.t('request_failed')); }
-    const data = await resp.json();
+    const data = await this.api.downloadFormats(fd).catch((err) => {
+      throw new Error(err.detail || this.t('request_failed'));
+    });
 
     // Store detected data
     this._dwnData = data;
@@ -154,25 +154,23 @@ async _dwnStartDownload(type) {
     const fd = new FormData();
     fd.append('url', url);
 
-    let endpoint = '';
+    let call;
     if (type === 'video') {
-      endpoint = `${this.apiBase}/download-video`;
       fd.append('format_id', this.dwnSelectedVideoFormat);
       fd.append('filename', this._dwnData?.title || '');
+      call = this.api.downloadVideo(fd);
     } else if (type === 'audio') {
-      endpoint = `${this.apiBase}/download-audio`;
       fd.append('format_id', this.dwnSelectedAudioFormat);
       fd.append('filename', this._dwnData?.title || '');
       fd.append('audio_format', this.dwnAudioContainer.value);
+      call = this.api.downloadAudio(fd);
     } else if (type === 'subtitle') {
-      endpoint = `${this.apiBase}/download-subtitles`;
       fd.append('lang', this.dwnSubLang.value);
       fd.append('filename', this._dwnData?.title || '');
+      call = this.api.downloadSubtitles(fd);
     }
 
-    const resp = await fetch(endpoint, { method: 'POST', body: fd });
-    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || this.t('request_failed')); }
-    const data = await resp.json();
+    const data = await call.catch((err) => { throw new Error(err.detail || this.t('request_failed')); });
     this.dwnTaskId = data.task_id;
     this._dwnStartSSE();
   } catch (e) {
@@ -184,7 +182,7 @@ async _dwnStartDownload(type) {
 _dwnStartSSE() {
   if (!this.dwnTaskId) return;
   this._dwnStopSSE();
-  this.dwnEventSource = new EventSource(`${this.apiBase}/task-stream/${this.dwnTaskId}`);
+  this.dwnEventSource = new EventSource(this.api.streamUrl(this.dwnTaskId));
   this.dwnEventSource.onmessage = (ev) => {
     try {
       const task = JSON.parse(ev.data);
@@ -203,7 +201,7 @@ _dwnStartSSE() {
         this.dwnProgressPanel.classList.remove('show');
         this.dwnCompleted.style.display = 'block';
         this.dwnFileName.textContent = task.filename || '';
-        this.dwnFileLink.href = `${this.apiBase}/download-video/file/${encodeURIComponent(task.filename || '')}`;
+        this.dwnFileLink.href = this.api.videoFileUrl(task.filename || '');
       } else if (task.status === 'error') {
         this._dwnStopSSE();
         this.dwnProgressPanel.classList.remove('show');

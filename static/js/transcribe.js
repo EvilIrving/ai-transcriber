@@ -9,13 +9,11 @@ async _startTranscription() {
   this._setLoading(true); this._hideResults(); this._showProgressTranscribe();
   try {
     const fd = this._buildFormData(url);
-    const resp = await fetch(`${this.apiBase}/process-video`, { method: 'POST', body: fd });
-    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || this.t('request_failed')); }
-    const data = await resp.json();
+    const data = await this.api.processVideo(fd);
     this.currentTaskId = data.task_id;
     this._initSP(); this._startSSE(); this._saveSettings();
   } catch (err) {
-    this._showError(this.t('error_processing_failed') + err.message);
+    this._showError(this.t('error_processing_failed') + (err.detail || this.t('request_failed')));
     this._setLoading(false); this._hideProgressTranscribe();
   }
 },
@@ -33,13 +31,11 @@ async _startFileUpload(file) {
   this._setLoading(true); this._hideResults(); this._showProgressTranscribe();
   try {
     const fd = this._buildFormData(''); fd.append('file', file, file.name);
-    const resp = await fetch(`${this.apiBase}/process-video`, { method: 'POST', body: fd });
-    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || this.t('request_failed')); }
-    const data = await resp.json();
+    const data = await this.api.processVideo(fd);
     this.currentTaskId = data.task_id;
     this._initSP(); this._startSSE(); this._saveSettings();
   } catch (err) {
-    this._showError(this.t('error_processing_failed') + err.message);
+    this._showError(this.t('error_processing_failed') + (err.detail || this.t('request_failed')));
     this._setLoading(false); this._hideProgressTranscribe();
   }
 },
@@ -62,7 +58,7 @@ _buildFormData(url) {
 _startSSE() {
   if (!this.currentTaskId) return;
   this._stopSSE();
-  this.eventSource = new EventSource(`${this.apiBase}/task-stream/${this.currentTaskId}`);
+  this.eventSource = new EventSource(this.api.streamUrl(this.currentTaskId));
   this.eventSource.onmessage = (ev) => {
     try {
       const task = JSON.parse(ev.data);
@@ -84,14 +80,11 @@ _startSSE() {
     this._stopSSE();
     try {
       if (this.currentTaskId) {
-        const r = await fetch(`${this.apiBase}/task-status/${this.currentTaskId}`);
-        if (r.ok) {
-          const task = await r.json();
-          if (task?.status === 'completed') {
-            this._stopSP(); this._setLoading(false); this._hideProgressTranscribe();
-            this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, this.partialSummaryShown ? 'summary' : 'script');
-            return;
-          }
+        const task = await this.api.taskStatus(this.currentTaskId);
+        if (task?.status === 'completed') {
+          this._stopSP(); this._setLoading(false); this._hideProgressTranscribe();
+          this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, this.partialSummaryShown ? 'summary' : 'script');
+          return;
         }
       }
     } catch (_) {}
@@ -116,7 +109,7 @@ async _cancelCurrentTask() {
   this._hideProgressTranscribe();
   this.progressMessage.textContent = '';
   try {
-    await fetch(`${this.apiBase}/task/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
+    await this.api.deleteTask(taskId);
   } catch (_) {}
 }
 
@@ -298,22 +291,14 @@ async _retryTranscription() {
     // 追加 two_step 开关
     fd.append('use_two_step', this.useTwoStep ? 'true' : 'false');
 
-    const resp = await fetch(`${this.apiBase}/retry/${encodeURIComponent(this.currentTaskId)}`, {
-      method: 'POST',
-      body: fd,
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.detail || this.t('request_failed'));
-    }
-    const data = await resp.json();
+    const data = await this.api.retry(this.currentTaskId, fd);
     this.currentTaskId = data.task_id;
     this.partialSummaryShown = false;
     this._initSP();
     this._startSSE();
     this._saveSettings();
   } catch (err) {
-    this._showError(this.t('error_processing_failed') + err.message);
+    this._showError(this.t('error_processing_failed') + (err.detail || this.t('request_failed')));
     this._setLoading(false);
     this._hideProgressTranscribe();
   }

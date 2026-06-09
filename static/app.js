@@ -28,6 +28,9 @@ class VideoTranscriber {
     this.i18n = window.VT_I18N || {};
     this.languages = window.VT_LANGUAGES || [];
 
+    /* Network layer: the only object that talks to the server */
+    this.api = new window.VTApiClient(this.apiBase);
+
     this._initElements();
     this._bindEvents();
     this._initTheme();
