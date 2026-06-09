@@ -30,6 +30,10 @@ class VideoProcessor:
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
+            # socket_timeout 让底层 socket 读取停滞时抛错。这是唯一能让
+            # to_thread 中的下载线程真正退出的机制——wall-clock 的 wait_for
+            # 只能放弃等待，无法终止线程。
+            'socket_timeout': 30,
             'remote_components': ['ejs:github'],  # 启用 JS 挑战求解器以绕过 YouTube 反爬
         }
         # cookies 配置独立存储，供所有 yt-dlp 调用复用
@@ -50,6 +54,26 @@ class VideoProcessor:
         if extra:
             base.update(extra)
         return base
+
+    @staticmethod
+    async def _download_with_timeout(ydl, url: str, timeout: float, label: str = "下载"):
+        """在线程池中执行 yt-dlp 下载并施加 wall-clock 兜底超时。
+
+        注意：asyncio.wait_for 超时只能取消对协程的等待，无法终止 asyncio.to_thread
+        启动的工作线程——底层下载会继续在后台运行。真正能让线程退出的是 yt-dlp 的
+        socket_timeout（连接停滞时抛错使线程结束）。因此本超时仅作为兜底，并把
+        空消息的 TimeoutError 转成可读错误。
+        """
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(ydl.download, [url]),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            raise Exception(
+                f"{label}超时（超过 {int(timeout)} 秒）。文件可能过大或网络过慢；"
+                "后台线程将在 socket_timeout 触发后自行结束。"
+            )
 
     def _configure_cookies(self):
         """
@@ -192,11 +216,8 @@ class VideoProcessor:
                 "outtmpl": str(sub_dir / "sub.%(ext)s"),
             })
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                # 仅下载字幕，超时 120s
-                await asyncio.wait_for(
-                    asyncio.to_thread(ydl.download, [url]),
-                    timeout=120.0,
-                )
+                # 仅下载字幕文件，体积小，给较短兜底超时
+                await self._download_with_timeout(ydl, url, 120.0, "下载字幕")
 
             # 3. 查找下载的字幕文件
             sub_files = list(sub_dir.glob("*.vtt")) + list(sub_dir.glob("*.srt"))
@@ -444,11 +465,9 @@ class VideoProcessor:
                     expected_duration = info.get('duration') or 0
                     logger.info(f"视频标题: {video_title}")
                 
-                # 下载视频（放到线程池避免阻塞事件循环，超时 300s）
-                await asyncio.wait_for(
-                    asyncio.to_thread(ydl.download, [url]),
-                    timeout=300.0,
-                )
+                # 下载视频。播客等大文件（100MB+）在慢速连接下可能远超 5 分钟，
+                # 给足兜底时间，避免合法但缓慢的下载被硬超时误杀。
+                await self._download_with_timeout(ydl, url, 1800.0, "下载视频")
             
             # 查找生成的m4a文件
             audio_file = str(output_dir / f"audio_{unique_id}.m4a")
@@ -732,10 +751,7 @@ class VideoProcessor:
             logger.info(f"开始下载视频: {url} (format={format_id})")
 
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                await asyncio.wait_for(
-                    asyncio.to_thread(ydl.download, [url]),
-                    timeout=600.0,
-                )
+                await self._download_with_timeout(ydl, url, 1800.0, "下载视频")
 
             # 查找输出文件（download_video_only）
             import glob
@@ -782,10 +798,7 @@ class VideoProcessor:
             logger.info(f"开始下载音频: {url} (format={format_id})")
 
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                await asyncio.wait_for(
-                    asyncio.to_thread(ydl.download, [url]),
-                    timeout=600.0,
-                )
+                await self._download_with_timeout(ydl, url, 1800.0, "下载音频")
 
             # 查找输出文件（download_audio_only）
             import glob as _glob
@@ -855,11 +868,8 @@ class VideoProcessor:
             })
 
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                # 下载字幕文件，超时 120s
-                await asyncio.wait_for(
-                    asyncio.to_thread(ydl.download, [url]),
-                    timeout=120.0,
-                )
+                # 下载字幕文件，体积小，给较短兜底超时
+                await self._download_with_timeout(ydl, url, 120.0, "下载字幕")
 
             # 查找输出文件（download_subtitles_file）
             import glob as _glob
