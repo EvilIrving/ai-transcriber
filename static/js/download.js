@@ -191,9 +191,8 @@ _dwnStartSSE() {
       this.dwnProgressStatus.textContent = Math.round(pct) + '%';
       this.dwnProgressFill.style.width = pct + '%';
       if (task.current_stage_label) {
-        const stagePct = this._clampPct(task.current_stage_progress || 0);
         this.dwnStageName.textContent = task.current_stage_label;
-        this.dwnStagePct.textContent = stagePct > 0 ? Math.round(stagePct) + '%' : '';
+        if (this.dwnStagePct) this.dwnStagePct.textContent = '';
       }
       this.dwnProgressMsg.textContent = task.message || '';
       if (task.status === 'completed') {

@@ -92,57 +92,56 @@ async def broadcast_task_update(task_id: str, task_data: dict):
 # ── 阶段权重定义 ──────────────────────────────────────────────
 # 每种任务类型的阶段列表，顺序执行。
 # weight 是相对权重，最终总进度会按该任务所有阶段权重归一化到 0–100%。
-STAGE_WEIGHTS = {
+STAGE_DEFINITIONS = {
     "url_summary": [
-        ("识别来源", 5, "正在识别链接", "确认链接有效，并准备本次任务使用的摘要模型。"),
-        ("查找字幕", 10, "正在查找字幕", "优先检查平台字幕，字幕存在时直接进入文本处理。"),
-        ("读取字幕", 20, "正在读取字幕", "把平台字幕读取为原始转录文本。"),
-        ("下载音频", 20, "正在下载音频", "字幕不可用时下载音频，供本地转录使用。"),
-        ("准备音频", 10, "正在准备音频", "把音频转换为 Whisper 可处理的格式。"),
-        ("转录", 25, "正在本地转录", "使用 Whisper 把音频转成原始文本。"),
-        ("阅读内容", 5, "正在阅读内容", "清理原始文本，检测语言，并准备摘要输入。"),
-        ("生成摘要prompt", 12, "正在生成摘要prompt", "为当前内容和目标语言构建摘要指令。"),
-        ("生成摘要", 13, "正在生成摘要", "调用语言模型生成可先阅读的摘要。"),
-        ("优化转录", 15, "摘要已可阅读，正在优化转录文本", "继续润色完整转录文本，完成后任务才结束。"),
+        ("识别来源", "正在识别链接", "确认链接有效，并准备本次任务使用的摘要模型。"),
+        ("查找字幕", "正在查找字幕", "优先检查平台字幕，字幕存在时直接进入文本处理。"),
+        ("读取字幕", "正在读取字幕", "把平台字幕读取为原始转录文本。"),
+        ("下载音频", "正在下载音频", "字幕不可用时下载音频，供本地转录使用。"),
+        ("准备音频", "正在准备音频", "把音频转换为 Whisper 可处理的格式。"),
+        ("转录", "正在本地转录", "使用 Whisper 把音频转成原始文本。"),
+        ("阅读内容", "正在阅读内容", "清理原始文本，检测语言，并准备摘要输入。"),
+        ("生成摘要prompt", "正在生成摘要prompt", "为当前内容和目标语言构建摘要指令。"),
+        ("生成摘要", "正在生成摘要", "调用语言模型生成可先阅读的摘要。"),
+        ("优化转录", "摘要已可阅读，正在优化转录文本", "继续润色完整转录文本，完成后任务才结束。"),
     ],
     "local_audio": [
-        ("读取文件", 5, "正在读取文件", "读取本地上传文件并确认文件内容可用。"),
-        ("准备音频", 15, "正在准备音频", "把本地媒体转换为 Whisper 可处理的音频格式。"),
-        ("转录", 50, "正在本地转录", "使用 Whisper 把音频转成原始文本。"),
-        ("阅读内容", 5, "正在阅读内容", "清理原始文本，检测语言，并准备摘要输入。"),
-        ("生成摘要prompt", 12, "正在生成摘要prompt", "为当前内容和目标语言构建摘要指令。"),
-        ("生成摘要", 13, "正在生成摘要", "调用语言模型生成可先阅读的摘要。"),
-        ("优化转录", 15, "摘要已可阅读，正在优化转录文本", "继续润色完整转录文本，完成后任务才结束。"),
+        ("读取文件", "正在读取文件", "读取本地上传文件并确认文件内容可用。"),
+        ("准备音频", "正在准备音频", "把本地媒体转换为 Whisper 可处理的音频格式。"),
+        ("转录", "正在本地转录", "使用 Whisper 把音频转成原始文本。"),
+        ("阅读内容", "正在阅读内容", "清理原始文本，检测语言，并准备摘要输入。"),
+        ("生成摘要prompt", "正在生成摘要prompt", "为当前内容和目标语言构建摘要指令。"),
+        ("生成摘要", "正在生成摘要", "调用语言模型生成可先阅读的摘要。"),
+        ("优化转录", "摘要已可阅读，正在优化转录文本", "继续润色完整转录文本，完成后任务才结束。"),
     ],
     "local_text": [
-        ("读取文件", 10, "正在读取文件", "读取文本文件，并把正文作为原始转录内容。"),
-        ("阅读内容", 30, "正在阅读内容", "清理原始文本，检测语言，并准备摘要输入。"),
-        ("生成摘要prompt", 30, "正在生成摘要prompt", "为当前内容和目标语言构建摘要指令。"),
-        ("生成摘要", 30, "正在生成摘要", "调用语言模型生成可先阅读的摘要。"),
-        ("优化转录", 10, "摘要已可阅读，正在优化转录文本", "整理文本输出文件，完成后任务才结束。"),
+        ("读取文件", "正在读取文件", "读取文本文件，并把正文作为原始转录内容。"),
+        ("阅读内容", "正在阅读内容", "清理原始文本，检测语言，并准备摘要输入。"),
+        ("生成摘要prompt", "正在生成摘要prompt", "为当前内容和目标语言构建摘要指令。"),
+        ("生成摘要", "正在生成摘要", "调用语言模型生成可先阅读的摘要。"),
+        ("优化转录", "摘要已可阅读，正在优化转录文本", "整理文本输出文件，完成后任务才结束。"),
     ],
     "download_only": [
-        ("识别资源", 15, "正在识别视频资源", "解析链接并确认可下载资源。"),
-        ("下载", 85, "正在下载视频", "下载所选视频、音频或字幕文件。"),
+        ("识别资源", "正在识别视频资源", "解析链接并确认可下载资源。"),
+        ("下载", "正在下载视频", "下载所选视频、音频或字幕文件。"),
     ],
     "retry": [
-        ("阅读内容", 15, "正在阅读内容", "读取已有转录文本并准备重新摘要。"),
-        ("生成摘要prompt", 35, "正在生成摘要prompt", "为重新摘要构建新的摘要指令。"),
-        ("生成摘要", 50, "正在生成摘要", "调用语言模型生成新的摘要结果。"),
-        ("优化转录", 20, "摘要已可阅读，正在优化转录文本", "重新整理完整转录文本，完成后任务才结束。"),
+        ("阅读内容", "正在阅读内容", "读取已有转录文本并准备重新摘要。"),
+        ("生成摘要prompt", "正在生成摘要prompt", "为重新摘要构建新的摘要指令。"),
+        ("生成摘要", "正在生成摘要", "调用语言模型生成新的摘要结果。"),
+        ("优化转录", "摘要已可阅读，正在优化转录文本", "重新整理完整转录文本，完成后任务才结束。"),
     ],
 }
 
 
 def init_task_stages(task_id: str, task_type: str):
     """初始化任务的阶段信息，返回阶段列表。"""
-    stages = STAGE_WEIGHTS.get(task_type, STAGE_WEIGHTS["url_summary"])
+    stages = STAGE_DEFINITIONS.get(task_type, STAGE_DEFINITIONS["url_summary"])
     stage_list = [
         {
             "name": s[0],
-            "weight": s[1],
-            "label": s[2],
-            "detail": s[3] if len(s) > 3 else s[2],
+            "label": s[1],
+            "detail": s[2] if len(s) > 2 else s[1],
         }
         for s in stages
     ]
@@ -150,9 +149,7 @@ def init_task_stages(task_id: str, task_type: str):
         "stages": stage_list,
         "skipped_stages": [],
         "current_stage": "",
-        "current_stage_progress": 0,
         "current_stage_index": -1,
-        "completed_weight": 0,
         "summary_ready": False,
         "transcript_ready": False,
         "task_type": task_type,
@@ -181,7 +178,6 @@ def refresh_task_view_state(task_id: str):
     skipped = set(task.get("skipped_stages", []))
     current_stage = task.get("current_stage")
     current_index = task.get("current_stage_index", -1)
-    current_stage_progress = max(0.0, min(100.0, float(task.get("current_stage_progress") or 0)))
     completed = task.get("status") == "completed"
 
     stage_items = []
@@ -214,7 +210,7 @@ def refresh_task_view_state(task_id: str):
     if completed:
         progress_label = "已完成"
     elif active_stages and active_index >= 0:
-        progress_label = f"第 {active_index + 1}/{len(active_stages)} 步 · 本步 {round(current_stage_progress)}%"
+        progress_label = f"第 {active_index + 1}/{len(active_stages)} 步"
     else:
         progress_label = "等待开始"
 
@@ -252,7 +248,10 @@ def resolve_stage_index(task_id: str, stage) -> int:
 
 
 def set_task_stage(task_id: str, stage, stage_progress: float = 0):
-    """设置当前阶段和进度，自动计算总进度。stage 可为下标或阶段名。"""
+    """设置当前阶段，按阶段计数计算总进度。stage 可为下标或阶段名。
+
+    stage_progress 参数保留以兼容调用方，但不再参与进度计算。
+    """
     if task_id not in tasks:
         return
     stages = tasks[task_id].get("stages", [])
@@ -260,28 +259,24 @@ def set_task_stage(task_id: str, stage, stage_progress: float = 0):
     if not stages or stage_index < 0 or stage_index >= len(stages):
         return
 
-    stage_progress = max(0.0, min(100.0, float(stage_progress or 0)))
     skipped = set(tasks[task_id].get("skipped_stages", []))
-    total_weight = sum(s["weight"] for s in stages if s["name"] not in skipped)
-    if total_weight <= 0:
+    active_stages = [s for s in stages if s["name"] not in skipped]
+    total_active = len(active_stages)
+    if total_active <= 0:
         return
 
-    completed_units = sum(
-        s["weight"] for s in stages[:stage_index] if s["name"] not in skipped
+    active_index = next(
+        (i for i, s in enumerate(active_stages) if s["name"] == stages[stage_index]["name"]),
+        -1,
     )
-    current_weight = stages[stage_index]["weight"]
-    if stages[stage_index]["name"] in skipped:
-        current_weight = 0
-    total_units = completed_units + current_weight * (stage_progress / 100.0)
-    total = total_units / total_weight * 100.0
+    # 进度 = 当前阶段序号 / 有效阶段总数
+    total = (active_index + 1) / total_active * 100.0 if active_index >= 0 else 0.0
 
     tasks[task_id].update({
         "current_stage": stages[stage_index]["name"],
         "current_stage_label": stages[stage_index]["label"],
         "current_stage_detail": stages[stage_index].get("detail", stages[stage_index]["label"]),
-        "current_stage_progress": round(stage_progress, 1),
         "current_stage_index": stage_index,
-        "completed_weight": round(completed_units / total_weight * 100.0, 1),
         "progress": round(total, 1),
         "message": stages[stage_index]["label"],
     })

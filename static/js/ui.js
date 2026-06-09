@@ -191,7 +191,6 @@ _clearResultsArea() {
   this.currentSource = { type: 'url', value: '', title: '' };
   if (this.resultsPanel) this.resultsPanel.classList.remove('show');
   if (this.progressPanel) this.progressPanel.classList.remove('show');
-  if (this.sourceRow) this.sourceRow.classList.remove('show');
   if (this.emptyState) this.emptyState.style.display = 'flex';
 },
 

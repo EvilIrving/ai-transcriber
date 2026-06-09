@@ -235,7 +235,6 @@ _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang
     this.translationTabBtn.style.display = 'none';
     this.dlTranslation.style.display = 'none';
   }
-  this._showSourceIndicator(videoTitle);
   this.resultsPanel.classList.add('show');
   this._switchResultTab(preferredTab);
   this.resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -248,7 +247,6 @@ _showPartialSummary(task) {
   this.summaryContent.innerHTML = marked.parse(task.summary);
   this.translationTabBtn.style.display = 'none';
   this.dlTranslation.style.display = 'none';
-  this._showSourceIndicator(task.video_title || '');
   this.resultsPanel.classList.add('show');
   this._switchResultTab('summary');
   this.resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -256,7 +254,6 @@ _showPartialSummary(task) {
 
 _hideResults() {
   this.resultsPanel.classList.remove('show');
-  if (this.sourceRow) this.sourceRow.classList.remove('show');
 },
 
 _switchResultTab(name) {
@@ -280,18 +277,8 @@ _syncResultActions(name) {
   if (this.retryTranslationBtn) this.retryTranslationBtn.style.display = 'none';
 },
 
-_showSourceIndicator(videoTitle = '') {
-  if (!this.sourceRow || !this.sourceText) return;
-  const src = this.currentSource || {};
-  const label = src.value || videoTitle || src.title || '';
-  const sourceLabel = this.t('source') || 'Source';
-  this.sourceText.textContent = label ? `${sourceLabel}: ${label}` : '';
-  this.sourceRow.classList.toggle('show', Boolean(label));
-},
-
 _showProgressTranscribe() {
   this.emptyState.style.display = 'none';
-  if (this.sourceRow) this.sourceRow.classList.remove('show');
   this.resultsPanel.classList.remove('show');
   this.progressPanel.classList.add('show');
   this.progStageName.innerHTML = `<span class="connecting-dots"><span></span><span></span><span></span></span>${this.t('connecting')}`;
