@@ -149,7 +149,7 @@ async def process_video(
             # 查找现有任务
             for tid, task in tasks.items():
                 if task.get("url") == url:
-                    return {"task_id": tid, "message": "该视频正在处理中，请等待..."}
+                    return {"task_id": tid, "message": "该资源正在处理中，请等待..."}
 
         # 生成唯一任务ID
         task_id = str(uuid.uuid4())
@@ -161,7 +161,7 @@ async def process_video(
         tasks[task_id] = {
             "status": "processing",
             "progress": 0,
-            "message": "开始处理视频...",
+            "message": "开始处理...",
             "script": None,
             "summary": None,
             "error": None,
@@ -178,7 +178,7 @@ async def process_video(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"处理视频时出错: {str(e)}")
+        logger.error(f"处理任务时出错: {str(e)}")
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
 
 
