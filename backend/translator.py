@@ -49,7 +49,7 @@ class Translator:
             eff_base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
         if not eff_key:
-            logger.warning("未设置可用的 OpenAI API Key，翻译将不可用")
+            logger.debug("未设置可用的 OpenAI API Key，翻译将不可用")
             return
 
         try:

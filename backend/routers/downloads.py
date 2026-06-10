@@ -1,4 +1,4 @@
-"""仅下载视频/音频/字幕的路由（不转录）。"""
+"""下载路由（仅下载，不转录）。"""
 import asyncio
 import logging
 import uuid
@@ -26,7 +26,7 @@ router = APIRouter()
 
 @router.post("/api/download-video/formats")
 async def get_video_formats(url: str = Form(...)):
-    """获取视频的可用格式列表（含视频、音频、字幕）"""
+    """获取媒体的可用格式列表（含视频轨道、音频轨道、字幕）"""
     try:
         result = await video_processor.get_video_formats(url)
         return result
@@ -44,7 +44,7 @@ async def start_download_audio(
     """开始下载音频（仅音频，不转录）"""
     try:
         if not url.strip():
-            raise HTTPException(status_code=400, detail="请提供视频URL")
+            raise HTTPException(status_code=400, detail="请提供URL")
 
         task_id = str(uuid.uuid4())
         tasks[task_id] = {
@@ -80,7 +80,7 @@ async def start_download_subtitles(
     """开始下载字幕文件"""
     try:
         if not url.strip():
-            raise HTTPException(status_code=400, detail="请提供视频URL")
+            raise HTTPException(status_code=400, detail="请提供URL")
 
         task_id = str(uuid.uuid4())
         tasks[task_id] = {
@@ -113,10 +113,10 @@ async def start_download_video(
     format_id: str = Form(default="best"),
     filename: str = Form(default=""),
 ):
-    """开始下载视频（仅下载，不转录）"""
+    """仅下载媒体文件（不转录）"""
     try:
         if not url.strip():
-            raise HTTPException(status_code=400, detail="请提供视频URL")
+            raise HTTPException(status_code=400, detail="请提供URL")
 
         task_id = str(uuid.uuid4())
 
@@ -146,7 +146,7 @@ async def start_download_video(
 
 @router.get("/api/download-video/file/{filename}")
 async def download_video_file(filename: str):
-    """下载已保存的视频文件"""
+    """下载已保存的文件"""
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="无效文件名")
 
