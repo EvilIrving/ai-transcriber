@@ -12,7 +12,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 class VideoProcessor:
-    """视频处理器，使用yt-dlp下载和转换视频"""
+    """媒体处理器，使用yt-dlp下载和转换媒体"""
     
     def __init__(self):
         self.ydl_opts = {
@@ -29,7 +29,7 @@ class VideoProcessor:
             'prefer_ffmpeg': True,
             'quiet': True,
             'no_warnings': True,
-            'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
+            'noplaylist': True,  # 强制只下载单个媒体，不下载播放列表
             # socket_timeout 让底层 socket 读取停滞时抛错。这是唯一能让
             # to_thread 中的下载线程真正退出的机制——wall-clock 的 wait_for
             # 只能放弃等待，无法终止线程。
@@ -155,12 +155,12 @@ class VideoProcessor:
         await asyncio.to_thread(_run)
         return str(out_path)
     
-    async def fetch_subtitles(self, url: str, output_dir: Path) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    async def fetch_subtitles(self, url: str, output_dir: Path) -> tuple[Optional[str], Optional[str], Optional[str], float]:
         """
         先尝试从平台获取字幕文本，比下载音频快得多。
 
         Returns:
-            (subtitle_markdown, video_title, language_code)
+            (subtitle_markdown, video_title, language_code, duration)
             subtitle_markdown 为 None 表示无可用字幕。
         """
         import asyncio
@@ -170,7 +170,7 @@ class VideoProcessor:
         sub_dir = output_dir / f"subs_{unique_id}"
 
         try:
-            # 1. 快速探测：获取视频信息和字幕可用性，不下载任何内容
+            # 1. 快速探测：获取媒体信息和字幕可用性，不下载任何内容
             check_opts = self._get_base_opts()
             with yt_dlp.YoutubeDL(check_opts) as ydl:
                 info = await asyncio.wait_for(
@@ -179,6 +179,7 @@ class VideoProcessor:
                 )
 
             video_title = info.get("title", "unknown")
+            video_duration = info.get("duration") or 0
             manual_subs: dict = info.get("subtitles") or {}
             auto_caps: dict = info.get("automatic_captions") or {}
 
@@ -187,8 +188,8 @@ class VideoProcessor:
             auto_langs = [k for k in auto_caps if not k.startswith("live_chat")]
 
             if not manual_langs and not auto_langs:
-                logger.info(f"视频无可用字幕: {url}")
-                return None, video_title, None
+                logger.info(f"无可用字幕: {url}")
+                return None, video_title, None, video_duration
 
             # 优先手动字幕，其次自动字幕
             prefer_manual = bool(manual_langs)
@@ -223,7 +224,7 @@ class VideoProcessor:
             sub_files = list(sub_dir.glob("*.vtt")) + list(sub_dir.glob("*.srt"))
             if not sub_files:
                 logger.warning("字幕下载后未找到文件，回退音频模式")
-                return None, video_title, None
+                return None, video_title, None, video_duration
 
             sub_file = sub_files[0]
 
@@ -239,16 +240,16 @@ class VideoProcessor:
 
             if not entries:
                 logger.warning("字幕解析结果为空，回退音频模式")
-                return None, video_title, None
+                return None, video_title, None, video_duration
 
             # 5. 格式化为与 Whisper 输出兼容的 Markdown
             formatted = self._format_subtitle_entries(entries, file_lang)
             logger.info(f"字幕获取成功: lang={file_lang}, {len(entries)} 条目")
-            return formatted, video_title, file_lang
+            return formatted, video_title, file_lang, video_duration
 
         except Exception as e:
             logger.warning(f"字幕获取失败（将回退至音频下载）: {e}")
-            return None, None, None
+            return None, None, None, 0
         finally:
             if sub_dir.exists():
                 try:
@@ -427,12 +428,13 @@ class VideoProcessor:
         url: str,
         output_dir: Path,
         prefetched_title: Optional[str] = None,
+        prefetched_duration: float = 0,
     ) -> tuple[str, str]:
         """
-        下载视频并转换为m4a格式。
+        下载媒体并提取音频为m4a格式。
 
-        prefetched_title: 若调用方已通过 fetch_subtitles 探测过视频信息，
-        可直接传入视频标题，跳过重复的 extract_info 网络请求。
+        prefetched_title: 若调用方已通过 fetch_subtitles 探测过媒体信息，
+        可直接传入，跳过重复的 extract_info 网络请求。
         """
         try:
             # 创建输出目录
@@ -446,28 +448,28 @@ class VideoProcessor:
             ydl_opts = self.ydl_opts.copy()
             ydl_opts['outtmpl'] = output_template
             
-            logger.info(f"开始下载视频: {url}")
+            logger.info(f"开始下载: {url}")
             
             import asyncio
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 if prefetched_title:
-                    # 标题和时长已在 fetch_subtitles 中获取，直接下载，跳过重复探测
+                    # fetch_subtitles 已探测过，直接下载不重复 extract_info
                     video_title = prefetched_title
-                    expected_duration = 0
-                    logger.info(f"复用预取标题，跳过 extract_info: {video_title}")
+                    expected_duration = prefetched_duration
+                    logger.info(f"复用预取标题: {video_title}, 时长≈{int(expected_duration)}s")
                 else:
-                    # 获取视频信息（放到线程池避免阻塞事件循环，超时 60s）
+                    # 获取媒体信息（放到线程池避免阻塞事件循环，超时 60s）
                     info = await asyncio.wait_for(
                         asyncio.to_thread(ydl.extract_info, url, False),
                         timeout=60.0,
                     )
                     video_title = info.get('title', 'unknown')
                     expected_duration = info.get('duration') or 0
-                    logger.info(f"视频标题: {video_title}")
+                    logger.info(f"标题: {video_title}")
                 
-                # 下载视频。播客等大文件（100MB+）在慢速连接下可能远超 5 分钟，
+                # 播客等大文件（100MB+）在慢速连接下可能远超 5 分钟，
                 # 给足兜底时间，避免合法但缓慢的下载被硬超时误杀。
-                await self._download_with_timeout(ydl, url, 1800.0, "下载视频")
+                await self._download_with_timeout(ydl, url, 1800.0, "下载")
             
             # 查找生成的m4a文件
             audio_file = str(output_dir / f"audio_{unique_id}.m4a")
@@ -482,7 +484,7 @@ class VideoProcessor:
                 else:
                     raise Exception("未找到下载的音频文件")
             
-            # 校验时长，如果和源视频差异较大，尝试一次ffmpeg规范化重封装
+            # 校验时长，如果和源文件差异较大，尝试一次ffmpeg规范化重封装
             try:
                 import subprocess, shlex
                 probe_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {shlex.quote(audio_file)}"
@@ -512,11 +514,11 @@ class VideoProcessor:
             return audio_file, video_title
             
         except Exception as e:
-            logger.error(f"下载视频失败: {str(e)}")
-            raise Exception(f"下载视频失败: {str(e)}")
+            logger.error(f"下载失败: {str(e)}")
+            raise Exception(f"下载失败: {str(e)}")
     
     def get_video_info(self, url: str) -> dict:
-        """获取视频信息"""
+        """获取媒体信息"""
         try:
             with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -529,11 +531,11 @@ class VideoProcessor:
                     'view_count': info.get('view_count', 0),
                 }
         except Exception as e:
-            logger.error(f"获取视频信息失败: {str(e)}")
-            raise Exception(f"获取视频信息失败: {str(e)}")
+            logger.error(f"获取媒体信息失败: {str(e)}")
+            raise Exception(f"获取媒体信息失败: {str(e)}")
 
     async def get_video_title(self, url: str) -> str:
-        """快速获取视频标题（仅探测，不下载）"""
+        """快速获取标题（仅探测，不下载）"""
         try:
             import asyncio
             check_opts = self._get_base_opts()
@@ -544,11 +546,11 @@ class VideoProcessor:
                 )
                 return info.get("title", "unknown")
         except Exception as e:
-            logger.error(f"获取视频标题失败: {e}")
+            logger.error(f"获取标题失败: {e}")
             return "unknown"
 
     async def get_video_formats(self, url: str) -> dict:
-        """获取视频/音频可用格式及字幕信息（用于下载选择）。
+        """获取媒体可用格式及字幕信息（用于下载选择）。
         
         Returns:
             {
@@ -727,13 +729,13 @@ class VideoProcessor:
             }
 
         except Exception as e:
-            logger.error(f"获取视频格式失败: {e}")
-            raise Exception(f"获取视频格式失败: {str(e)}")
+            logger.error(f"获取媒体格式失败: {e}")
+            raise Exception(f"获取媒体格式失败: {str(e)}")
 
     async def download_video_only(
         self, url: str, output_dir: Path, format_id: str = "best", filename_base: str = ""
     ) -> str:
-        """仅下载视频文件（不转录），返回输出路径"""
+        """仅下载媒体文件（不转录），返回输出路径"""
         try:
             import asyncio
             output_dir.mkdir(exist_ok=True)
@@ -748,12 +750,12 @@ class VideoProcessor:
                 "merge_output_format": "mp4",
             })
 
-            logger.info(f"开始下载视频: {url} (format={format_id})")
+            logger.info(f"开始下载: {url} (format={format_id})")
 
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                await self._download_with_timeout(ydl, url, 1800.0, "下载视频")
+                await self._download_with_timeout(ydl, url, 1800.0, "下载")
 
-            # 查找输出文件（download_video_only）
+            # 查找输出文件
             import glob
             pattern = str(output_dir / f"{safe_name}.*")
             candidates = glob.glob(pattern)
@@ -769,8 +771,8 @@ class VideoProcessor:
             raise Exception("下载完成但未找到输出文件")
 
         except Exception as e:
-            logger.error(f"下载视频失败: {e}")
-            raise Exception(f"下载视频失败: {str(e)}")
+            logger.error(f"下载失败: {e}")
+            raise Exception(f"下载失败: {str(e)}")
 
     async def download_audio_only(
         self, url: str, output_dir: Path, format_id: str = "bestaudio/best",
@@ -844,7 +846,7 @@ class VideoProcessor:
             candidate_langs = manual_langs if prefer_manual else auto_langs
 
             if not candidate_langs:
-                raise Exception("该视频无可下载字幕")
+                raise Exception("无可用字幕")
 
             # 选语言：指定语言 > 英语 > 中文 > 第一个可用
             _priority = [lang, "en", "en-orig", "zh-Hans", "zh-Hant", "zh"]
