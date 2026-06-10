@@ -6,7 +6,9 @@
 
 一款开源的AI视频/播客转录和摘要工具：支持YouTube、Bilibili、抖音、Apple Podcasts、SoundCloud等30+平台链接，**也支持本地上传**（音视频或纯文本）。
 
-![Interface](cn_video.png)
+![截图 1](SCR-20260610-jnsb-2.png)
+![截图 2](SCR-20260610-jnzj.png)
+![截图 3](SCR-20260610-jodn.png)
 
 </div>
 
@@ -157,39 +159,57 @@ python3 start.py --prod
 ## 🛠️ 技术架构
 
 ### 后端技术栈
-- **FastAPI**: 现代化的Python Web框架
-- **yt-dlp**: 视频下载和处理
-- **FFmpeg**: 音频提取与本地上传转码（Whisper 用单声道 16kHz 等）
-- **Faster-Whisper**: 高效的语音转录
-- **OpenAI API**: 智能文本摘要
+- **FastAPI** — 异步 Web 框架，含 SSE 流式推送；按域拆分路由（core / transcribe / downloads / rss）
+- **yt-dlp** — 视频/音频/字幕提取，支持 1800+ 站点；内置 JS 挑战求解器应对 YouTube 反爬
+- **FFmpeg** — 音频转码（单声道 16kHz，供 Whisper 使用）
+- **Faster-Whisper** — CTranslate2 加速的语音转文字
+- **OpenAI SDK** — 摘要、文本优化、翻译
+- **trafilatura** — 网页正文提取（RSS 条目仅有链接时回退抓取）
+- **aiofiles** — 异步文件读写
 
 ### 前端技术栈
-- **HTML5 + CSS3**: 响应式界面设计
-- **JavaScript (ES6+)**: 现代化的前端交互
-- **Marked.js**: Markdown渲染
-- **Font Awesome**: 图标库
+- **HTML5 + CSS3** — 响应式界面，亮/暗双主题
+- **Vanilla JavaScript (ES6+)** — 零框架
+- **api.js** — 专用 HTTP 客户端层，统一管理后端通信
+- **Marked.js** — 客户端 Markdown 渲染
+- **Font Awesome 6** — 图标库
+- **IndexedDB** — 客户端摘要历史存储
 
 ### 项目结构
 ```
 ai-transcriber/
-├── backend/                 # 后端代码
-│   ├── main.py             # FastAPI主应用
-│   ├── video_processor.py  # 视频处理模块
-│   ├── transcriber.py      # 转录模块
-│   ├── summarizer.py       # 摘要模块
-│   ├── translator.py       # 翻译模块
-│   └── llm_sanitize.py     # LLM 输出后处理（去除套话等）
-├── static/                 # 前端文件
-│   ├── index.html          # 主页面
-│   ├── app.js              # 前端主入口/初始化串联
+├── backend/                     # 后端代码
+│   ├── main.py                 # FastAPI 应用装配、中间件与路由注册
+│   ├── services.py             # 共享单例（处理器、上传配置）
+│   ├── pipeline.py             # 编排层：转录后管线、任务执行器
+│   ├── task_store.py           # 任务状态机、阶段权重、SSE 广播
+│   ├── video_processor.py      # yt-dlp 封装：下载、格式检测、字幕提取
+│   ├── transcriber.py          # Faster-Whisper 转录
+│   ├── summarizer.py           # LLM 摘要生成（单步 / 两步）
+│   ├── translator.py           # LLM 翻译（含语言检测）
+│   ├── llm_sanitize.py         # LLM 输出后处理（去除套话等）
+│   ├── rss_reader.py           # RSS/Atom 解析与 JSON 持久化
+│   └── routers/
+│       ├── __init__.py
+│       ├── core.py             # 静态页面、健康检查、模型列表代理
+│       ├── transcribe.py       # 链接/上传任务、状态、SSE、下载、重试
+│       ├── downloads.py        # 视频/音频/字幕下载端点
+│       └── rss.py              # RSS 订阅、条目列表、任务创建
+├── static/                     # 前端文件
+│   ├── index.html              # 主页面（含内嵌 CSS）
+│   ├── app.js                  # 入口：初始化与模块串联
+│   ├── favicon.ico             # 应用图标
+│   ├── icon128.svg             # SVG 图标
+│   ├── rss_feeds_template.json # RSS 导入模板
 │   └── js/
-│       ├── i18n.js         # UI 语言字典与 i18n 辅助方法
-│       ├── ui.js           # 主题、设置、复制/下载等 UI 工具
-│       ├── transcribe.js   # 转录任务流程与 SSE 处理
-│       ├── download.js     # 视频/音频/字幕下载页逻辑
-│       ├── history.js      # IndexedDB 历史摘要
-│       └── rss.js          # RSS 订阅与 RSS 任务操作
-├── temp/                   # 临时文件目录
+│       ├── i18n.js             # UI 语言字典与 i18n 辅助方法
+│       ├── ui.js               # 主题、设置、复制/下载等 UI 工具
+│       ├── api.js              # HTTP 客户端，统一管理后端请求
+│       ├── transcribe.js       # 转录任务流程与 SSE 处理
+│       ├── download.js         # 视频/音频/字幕下载页逻辑
+│       ├── history.js          # IndexedDB 历史摘要
+│       └── rss.js              # RSS 订阅与 RSS 任务操作
+├── temp/                       # 临时文件（转录、摘要、下载；含 tasks.json）
 ├── Docker相关文件           # Docker部署
 │   ├── Dockerfile          # Docker镜像配置
 │   ├── docker-compose.yml  # Docker Compose配置
@@ -211,10 +231,10 @@ ai-transcriber/
 | `PORT` | 服务器端口 | `8000` | 否 |
 | `WHISPER_MODEL_SIZE` | Whisper模型大小 | `base` | 否 |
 | `UPLOAD_MAX_MB` | 本地上传单文件大小上限（MB） | `200` | 否 |
-| `COOKIES_BROWSER` | 用于YouTube反爬的浏览器（chrome/brave/edge/firefox） | `chrome` | 否 |
-| `COOKIES_FILE` | 手动指定cookies.txt路径（优先级高于COOKIES_BROWSER） | - | 否 |
-
-另提供可选接口 `POST /api/process-upload`，与向 `/api/process-video` 提交 `file`  multipart 字段行为一致。
+| `COOKIES_BROWSER` | YouTube cookies 提取浏览器（chrome/brave/edge/firefox） | `chrome` | 否 |
+| `COOKIES_FILE` | cookies.txt 路径（优先于 COOKIES_BROWSER） | — | 否 |
+| `OPENAI_TRANSLATION_MODEL` | 翻译专用 LLM 模型 | `gpt-4o` | 否 |
+| `LLM_TIMEOUT_SEC` | LLM 调用超时（秒） | `300` | 否 |
 
 ### Whisper模型大小选项
 
@@ -228,8 +248,11 @@ ai-transcriber/
 
 ## 🔧 常见问题
 
-### Q: 为什么转录速度很慢？
-A: 转录速度取决于视频长度、Whisper模型大小和硬件性能。可以尝试使用更小的模型（如tiny或base）来提高速度。
+### Q: 为什么摘要比转录先出来？
+A: 管线会并行生成摘要与优化转录文本。摘要只需要原始文本的轻度清理版本，因此更快完成；完整转录在后台继续优化。
+
+### Q: 可以换模型或语言而不重新处理整个视频吗？
+A: 可以。点击 **Retry** 按钮仅重新运行优化 + 摘要步骤，基于已保存的原始转录——无需重新下载或转录。
 
 ### Q: 支持哪些视频平台？
 A: 支持所有yt-dlp支持的平台，包括但不限于：YouTube、抖音、Bilibili、优酷、爱奇艺、腾讯视频等。

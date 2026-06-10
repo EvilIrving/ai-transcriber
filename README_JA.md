@@ -6,7 +6,9 @@
 
 動画・ポッドキャストの文字起こし、翻訳、要約、履歴保存を行うオープンソースツールです。YouTube、Bilibili、TikTok、Apple Podcasts、SoundCloud など 30+ プラットフォームの URL と、ローカルの音声・動画・テキストファイルに対応します。
 
-![Interface](en_video.png)
+![Screenshot 1](SCR-20260610-jnsb-2.png)
+![Screenshot 2](SCR-20260610-jnzj.png)
+![Screenshot 3](SCR-20260610-jodn.png)
 
 </div>
 

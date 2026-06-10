@@ -6,7 +6,9 @@ English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](READM
 
 Paste a YouTube, TikTok, Bilibili, Apple Podcasts, or SoundCloud link — from 30+ platforms — **or drop a local file** (audio, video, plain text). Get an optimized transcript, an AI summary, and RSS-powered workflow automation, all in one browser tab.
 
-![Interface](en_video.png)
+![Screenshot 1](SCR-20260610-jnsb-2.png)
+![Screenshot 2](SCR-20260610-jnzj.png)
+![Screenshot 3](SCR-20260610-jodn.png)
 
 </div>
 

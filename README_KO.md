@@ -6,7 +6,9 @@
 
 동영상과 팟캐스트를 전사, 번역, 요약하고 기록으로 저장하는 오픈소스 도구입니다. YouTube, Bilibili, TikTok, Apple Podcasts, SoundCloud 등 30개 이상의 플랫폼 URL과 로컬 오디오·동영상·텍스트 파일을 지원합니다.
 
-![Interface](en_video.png)
+![Screenshot 1](SCR-20260610-jnsb-2.png)
+![Screenshot 2](SCR-20260610-jnzj.png)
+![Screenshot 3](SCR-20260610-jodn.png)
 
 </div>
 
