@@ -4,7 +4,7 @@
 
 English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
-Paste a YouTube, TikTok, Bilibili, Apple Podcasts, or SoundCloud link — from 30+ platforms — **or drop a local file** (audio, video, plain text). Get an optimized transcript, an AI summary, and RSS-powered workflow automation, all in one browser tab.
+Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a local file — audio, video, even plain text if you just want a summary. The tool grabs subtitles when they're available, falls back to Whisper transcription when they're not, then cleans everything up with an LLM. RSS automation is built in for recurring sources.
 
 ![Screenshot 1](SCR-20260610-jnsb-2.png)
 ![Screenshot 2](SCR-20260610-jnzj.png)
@@ -14,22 +14,22 @@ Paste a YouTube, TikTok, Bilibili, Apple Podcasts, or SoundCloud link — from 3
 
 ## ✨ Features
 
-- 🎥 **Multi-Platform Support**: Works with YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ more via yt-dlp
-- 📁 **Local File Upload**: Drag-and-drop `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`, or `.txt` (treated as source text). Media is normalized with FFmpeg before Whisper transcription
-- ⚡ **Subtitle-First Architecture**: Natively available captions are extracted instantly with zero audio download. Whisper is used only when no subtitles exist — dramatically faster for most YouTube videos
-- 🗣️ **Smart Transcription**: High-accuracy speech-to-text via Faster-Whisper (CTranslate2) when subtitles aren't available
-- 🤖 **AI Text Optimization**: LLM-powered typo correction, sentence completion, and intelligent paragraphing
-- 🌍 **Multi-Language Summaries**: Generate summaries in 10+ languages — auto-translation when the source and target languages differ
-- 🔁 **Summary-First Pipeline**: Summaries are generated in parallel with transcript optimization, so you can start reading immediately while the full transcript refines in the background
-- 🧠 **Two-Step Summary**: Optional structured prompting — the LLM first produces a tailored summary prompt, then generates the final summary from it
-- 🔄 **Retry**: Re-generate summary and optimized transcript from the saved raw text without re-downloading or re-transcribing
-- 🌐 **Multi-Language UI**: Toggle the interface between English, 中文, 日本語, and 한국어
-- 🌗 **Light / Dark Theme**: Toggle between themes with a single button
-- 🔧 **Bring Your Own Model**: Configure any OpenAI-compatible API endpoint (OpenAI, OpenRouter, local LLM, etc.) directly in the UI — enter your API Base URL and API Key, click **Fetch** to auto-discover available models, then select one
-- 📡 **RSS Summary Tasks**: Subscribe to RSS feeds, refresh entries, and create one-click summary or download tasks from feed items
-- ⬇️ **Media Download Center**: Detect available video, audio, and subtitle formats, then download the one you need
-- 🗂️ **IndexedDB History**: Browse, search, expand, and delete saved summaries from the History tab — no server-side database needed
-- 📱 **Mobile-Friendly**: Responsive layout for phones and tablets
+- **Multi-platform**: YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ more via yt-dlp
+- **Local files**: Drag in `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`, or `.txt` (skip transcription, go straight to summary). Media is normalized with FFmpeg before Whisper
+- **Subtitles first**: Existing captions are pulled without downloading audio at all. Whisper only kicks in when subtitles aren't available. This covers most YouTube videos and saves a lot of time
+- **Whisper fallback**: Speech-to-text via Faster-Whisper (CTranslate2) when no subtitles exist
+- **LLM cleanup**: Typo correction, sentence completion, and paragraphing via the configured LLM
+- **Multi-language summaries**: 10+ languages, with automatic translation when source and target languages differ
+- **Summary delivered first**: Summaries run in parallel with transcript optimization, so you can read the summary while the full transcript is still being cleaned up
+- **Two-step summary** (optional): The LLM first drafts a tailored summary prompt, then generates the final summary from it. Often produces better results for long content
+- **Retry without re-processing**: Re-generate summary and transcript from saved raw text. No re-download or re-transcription needed
+- **Multi-language UI**: English, 中文, 日本語, 한국어
+- **Light / dark theme**: Single-button toggle
+- **Bring your own model**: Configure any OpenAI-compatible API (OpenAI, OpenRouter, local LLM, etc.) in the UI. Enter API Base URL and key, click Fetch to discover models, pick one
+- **RSS subscriptions**: Subscribe to feeds, refresh entries, summarize or download items with one click
+- **Media downloads**: Detect available video, audio, and subtitle formats, then download what you need
+- **Browser-side history**: Search, expand, and delete past summaries from the History tab. Stored in IndexedDB, no database server required
+- **Works on mobile**: Responsive layout for phones and tablets
 
 [![Star History Chart](https://api.star-history.com/svg?repos=EvilIrving/ai-transcriber&type=Date)](https://star-history.com/#EvilIrving/ai-transcriber&Date)
 
