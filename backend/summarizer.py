@@ -21,7 +21,7 @@ class Summarizer:
         effective_url = base_url or os.getenv("OPENAI_BASE_URL")
 
         if not effective_key:
-            logger.warning("未设置OPENAI_API_KEY环境变量，将无法使用摘要功能")
+            logger.debug("未设置OPENAI_API_KEY环境变量，将无法使用摘要功能")
 
         if effective_key:
             kwargs = {"api_key": effective_key}
@@ -37,9 +37,10 @@ class Summarizer:
         else:
             self.client = None
 
-        # 允许前端指定模型，覆盖硬编码的 gpt-3.5-turbo / gpt-4o
-        self.fast_model     = model or "gpt-3.5-turbo"
-        self.advanced_model = model or "gpt-4o"
+        # 模型选择优先级：构造函数参数 > 环境变量 > 默认值
+        # FAST_MODEL 用于格式化/纠错，SMART_MODEL 用于摘要/翻译
+        self.fast_model = model or os.getenv("FAST_MODEL") or "gpt-3.5-turbo"
+        self.advanced_model = model or os.getenv("SMART_MODEL") or "gpt-4o"
         # LLM 总超时（兜底），可通过环境变量调整
         self._llm_timeout = float(os.getenv("LLM_TIMEOUT_SEC", "300"))
         

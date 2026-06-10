@@ -46,8 +46,28 @@ async def _llm_call(fn, *args, llm_timeout: float = 300.0, task_name: str = ""):
         )
 
 
+# 明确无字幕的音频文件扩展名
+_AUDIO_ONLY_EXTENSIONS = {'.mp3', '.m4a', '.wav', '.flac', '.ogg', '.opus', '.aac', '.wma', '.weba'}
+# 明确无字幕的音频 MIME 类型前缀
+_AUDIO_MIME_PREFIXES = ('audio/',)
+
+
+def _is_audio_only(url: str, enclosure_type: str = "") -> bool:
+    """判断 URL 是否指向纯音频源（无需尝试字幕提取）。"""
+    # 1. RSS enclosure 提供了明确的 MIME 类型
+    if enclosure_type:
+        return enclosure_type.startswith(_AUDIO_MIME_PREFIXES)
+    # 2. 根据 URL 扩展名推断（排除带有明显视频特征的）
+    from urllib.parse import urlparse
+    path = urlparse(url).path.lower()
+    for ext in _AUDIO_ONLY_EXTENSIONS:
+        if path.endswith(ext):
+            return True
+    return False
+
+
 def sanitize_title_for_filename(title: str) -> str:
-    """将视频标题清洗为安全的文件名片段。"""
+    """将标题清洗为安全的文件名片段。"""
     if not title:
         return "untitled"
     safe = re.sub(r"[^\w\-\s]", "", title)
@@ -348,7 +368,7 @@ async def process_video_task(
     model_base_url: str = "",
     model_id: str = "",
 ):
-    """异步处理视频任务"""
+    """异步处理任务"""
     try:
         # 初始化阶段
         _init_task_stages(task_id, "url_summary")
@@ -364,8 +384,16 @@ async def process_video_task(
             request_summarizer = summarizer
 
         # ── 查找字幕 ────────────────────────────────────────────
-        await _broadcast_stage(task_id, "查找字幕", 50)
-        subtitle_text, sub_title, sub_lang = await video_processor.fetch_subtitles(url, TEMP_DIR)
+        subtitle_text = None; sub_title = None; sub_lang = None; sub_duration = 0
+
+        if _is_audio_only(url):
+            # 纯音频：跳过字幕探测，快速获取标题后直接下载 + 转录
+            logger.info(f"检测到音频源，跳过字幕查找: {url}")
+            _skip_task_stages(task_id, ["查找字幕", "读取字幕"])
+            sub_title = await video_processor.get_video_title(url)
+        else:
+            await _broadcast_stage(task_id, "查找字幕", 50)
+            subtitle_text, sub_title, sub_lang, sub_duration = await video_processor.fetch_subtitles(url, TEMP_DIR)
 
         if subtitle_text:
             # ── 快速路径：有字幕 ─────────────────────────────────
@@ -378,12 +406,14 @@ async def process_video_task(
             await _broadcast_stage(task_id, "读取字幕", 100)
         else:
             # ── 慢速路径：下载音频 → Whisper ────────────────────
+            if not _is_audio_only(url):
+                await _broadcast_stage(task_id, "查找字幕", 100)
             tasks[task_id].update({"mode": "whisper"})
             _skip_task_stages(task_id, ["读取字幕"])
 
             await _broadcast_stage(task_id, "下载音频", 30)
             audio_path, video_title = await video_processor.download_and_convert(
-                url, TEMP_DIR, prefetched_title=sub_title or None
+                url, TEMP_DIR, prefetched_title=sub_title or None, prefetched_duration=sub_duration or 0
             )
             await _broadcast_stage(task_id, "下载音频", 100)
 
@@ -437,7 +467,7 @@ async def process_upload_task(
         else:
             request_summarizer = summarizer
 
-        if ext_lower == ".txt":
+        if ext_lower in (".txt", ".md"):
             _init_task_stages(task_id, "local_text")
             await _broadcast_stage(task_id, "读取文件", 100)
 
@@ -485,7 +515,7 @@ async def run_download_task(task_id: str, url: str, do_download):
     """通用下载任务执行器：识别标题 → 下载 → 广播完成/失败。
 
     do_download(video_title) 为协程，返回 (output_path, extra_fields, success_message)。
-    视频/音频/字幕下载共用此骨架，仅下载这一步不同。
+    下载共用此骨架，仅下载这一步不同。
     """
     try:
         await _broadcast_stage(task_id, "识别资源", 50)
@@ -522,7 +552,7 @@ async def run_download_task(task_id: str, url: str, do_download):
 
 
 async def run_download_video_task(task_id: str, url: str, format_id: str, filename: str):
-    """执行视频下载任务"""
+    """执行下载任务"""
     async def _dl(video_title):
         path = await video_processor.download_video_only(
             url, TEMP_DIR, format_id, filename or video_title
@@ -565,6 +595,7 @@ async def run_rss_summarize_task(
     entry_title = entry.get("title", "RSS条目")
     entry_link = entry.get("link", "")
     enclosure_url = entry.get("enclosure_url", "")
+    enclosure_type = entry.get("enclosure_type", "")
     entry_content = entry.get("content", "") or entry.get("summary", "")
 
     try:
@@ -579,7 +610,13 @@ async def run_rss_summarize_task(
             await _broadcast_stage(task_id, "识别来源", 50)
 
             # 先尝试字幕快速通道（与 URL 流程一致）
-            subtitle_text, sub_title, sub_lang = await video_processor.fetch_subtitles(enclosure_url, TEMP_DIR)
+            subtitle_text = None; sub_title = None; sub_lang = None; sub_duration = 0
+
+            if _is_audio_only(enclosure_url, enclosure_type):
+                logger.info(f"检测到音频源（{enclosure_type}），跳过字幕查找: {enclosure_url}")
+                _skip_task_stages(task_id, ["查找字幕", "读取字幕"])
+            else:
+                subtitle_text, sub_title, sub_lang, sub_duration = await video_processor.fetch_subtitles(enclosure_url, TEMP_DIR)
 
             if subtitle_text:
                 raw_script = subtitle_text
@@ -591,10 +628,12 @@ async def run_rss_summarize_task(
             else:
                 tasks[task_id].update({"mode": "whisper"})
                 _skip_task_stages(task_id, ["读取字幕"])
-                await _broadcast_stage(task_id, "查找字幕", 100)
+                if not _is_audio_only(enclosure_url, enclosure_type):
+                    await _broadcast_stage(task_id, "查找字幕", 100)
 
+                await _broadcast_stage(task_id, "下载音频", 30)
                 audio_path, title = await video_processor.download_and_convert(
-                    enclosure_url, TEMP_DIR, prefetched_title=sub_title or entry_title,
+                    enclosure_url, TEMP_DIR, prefetched_title=sub_title or entry_title, prefetched_duration=sub_duration or 0
                 )
                 await _broadcast_stage(task_id, "下载音频", 100)
                 await _broadcast_stage(task_id, "准备音频", 100)

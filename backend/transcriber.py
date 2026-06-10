@@ -23,12 +23,18 @@ class Transcriber:
         """延迟加载模型"""
         if self.model is None:
             logger.info(f"正在加载Whisper模型: {self.model_size}")
+            # 优先使用 GPU，不可用时回退到 CPU
             try:
-                self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
-                logger.info("模型加载完成")
+                self.model = WhisperModel(self.model_size, device="cuda", compute_type="float16")
+                logger.info("模型加载完成（使用 GPU）")
             except Exception as e:
-                logger.error(f"模型加载失败: {str(e)}")
-                raise Exception(f"模型加载失败: {str(e)}")
+                logger.warning(f"GPU 模型加载失败: {e}，回退到 CPU")
+                try:
+                    self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+                    logger.info("模型加载完成（CPU 备选）")
+                except Exception as cpu_e:
+                    logger.error(f"模型加载失败: {cpu_e}")
+                    raise Exception(f"模型加载失败: {cpu_e}")
     
     async def transcribe(self, audio_path: str, language: Optional[str] = None) -> str:
         """
