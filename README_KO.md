@@ -6,7 +6,7 @@
 
 YouTube, Bilibili, TikTok, Apple Podcasts 등 30개 이상 플랫폼 링크를 붙여넣거나, 로컬 오디오·동영상·텍스트 파일을 드롭하세요. 자막이 있으면 그대로 추출하고, 없으면 Whisper로 전사한 뒤 LLM이 텍스트를 정리하고 요약합니다. RSS 자동화도 내장되어 있습니다.
 
-![Screenshot 1](SCR-20260610-jnsb-2.png)
+![Screenshot 1](SCR-20260610-mbvm-2.png)
 ![Screenshot 2](SCR-20260610-jnzj.png)
 ![Screenshot 3](SCR-20260610-jodn.png)
 

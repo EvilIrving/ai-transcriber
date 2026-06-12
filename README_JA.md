@@ -6,7 +6,7 @@
 
 YouTube、Bilibili、TikTok、Apple Podcasts など 30+ プラットフォームのリンクを貼るか、ローカルの音声・動画・テキストファイルをドロップしてください。字幕がある場合はそのまま抽出し、なければ Whisper で文字起こし、LLM でテキストを整えて要約します。RSS による定期処理も内蔵しています。
 
-![Screenshot 1](SCR-20260610-jnsb-2.png)
+![Screenshot 1](SCR-20260610-mbvm-2.png)
 ![Screenshot 2](SCR-20260610-jnzj.png)
 ![Screenshot 3](SCR-20260610-jodn.png)
 

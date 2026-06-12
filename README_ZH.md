@@ -6,7 +6,7 @@
 
 粘贴 YouTube、Bilibili、抖音、Apple Podcasts 等 30+ 平台的链接，或者拖入本地音视频文件、纯文本。有字幕时直接提取，没有时走 Whisper 转录，最后由 LLM 做文本清洗和摘要。RSS 自动化也已内置，适合处理播客等周期性内容。
 
-![截图 1](SCR-20260610-jnsb-2.png)
+![截图 1](SCR-20260610-mbvm-2.png)
 ![截图 2](SCR-20260610-jnzj.png)
 ![截图 3](SCR-20260610-jodn.png)
 
