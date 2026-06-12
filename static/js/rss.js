@@ -97,7 +97,7 @@ async _rssSubscribe() {
   const feedUrl = this.rssFeedUrl.value.trim();
   if (!feedUrl) { this._rssShowError(this.t('rss_url_placeholder')); return; }
   this.rssAddBtn.disabled = true;
-  this.rssAddBtn.innerHTML = `<span class="spinner"></span> ${this.t('adding')}`;
+  this.rssAddBtn.innerHTML = `<span>${this.t('adding')}</span>`;
   this._rssHideError();
   try {
     const newFeed = await this._rssParseFeed(feedUrl);
@@ -112,7 +112,7 @@ async _rssSubscribe() {
     this._rssShowError(this.t('subscribe_failed') + (e.name === 'AbortError' ? this.t('timeout') : e.message));
   } finally {
     this.rssAddBtn.disabled = false;
-    this.rssAddBtn.innerHTML = `<i class="fas fa-plus"></i> <span>${this.t('subscribe')}</span>`;
+    this.rssAddBtn.innerHTML = `<span>${this.t('subscribe')}</span>`;
   }
 },
 
@@ -195,7 +195,7 @@ async _rssImportFeedList(feedList, btn) {
       console.error('[RSS import] final failure', preset.title || preset.url, preset.url, e);
     } finally {
       done += 1;
-      if (btn) btn.innerHTML = `<span class="spinner"></span> ${this.t('importing_json_feeds')(done, total)}`;
+      if (btn) btn.innerHTML = `<span>${this.t('importing_json_feeds')(done, total)}</span>`;
       await this._rssLoadFeeds();
     }
   }
@@ -211,7 +211,7 @@ async _rssImportJsonFile(file) {
   const btn = this.rssImportJsonBtn;
   if (btn) {
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> ${this.t('adding')}`;
+    btn.innerHTML = `<span>${this.t('adding')}</span>`;
   }
   this._rssHideError();
   try {
@@ -227,7 +227,7 @@ async _rssImportJsonFile(file) {
     if (this.rssJsonFileInput) this.rssJsonFileInput.value = '';
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = `<i class="fas fa-file-import"></i> <span>${this.t('import_json_feeds')}</span>`;
+      btn.innerHTML = `<span>${this.t('import_json_feeds')}</span>`;
     }
     await this._rssLoadFeeds();
   }
@@ -272,8 +272,8 @@ _rssRenderFeeds(feeds) {
   this._hideRssTooltip();
   this.feedList.innerHTML = feeds.map(f => {
     const lastChecked = f.last_checked ? new Date(f.last_checked).toLocaleString() : this.t('never_updated');
-    const errorInfo = f.last_error ? `<span style="color:var(--error);font-size:10px;" title="${this._escapeHtml(f.last_error)}"><i class="fas fa-triangle-exclamation"></i> ${this.t('rss_refresh_failed')}</span>` : '';
-    const newBadge = f.new_count > 0 ? `<span class="badge" style="background:var(--accent);">${this.t('new_count')(f.new_count)}</span>` : '';
+    const errorInfo = f.last_error ? `<span class="feed-card-error" title="${this._escapeHtml(f.last_error)}"><i class="fas fa-triangle-exclamation"></i> ${this.t('rss_refresh_failed')}</span>` : '';
+    const newBadge = f.new_count > 0 ? `<span class="badge feed-new-badge">${this.t('new_count')(f.new_count)}</span>` : '';
     return `
     <div class="feed-card${f.id === this._rssActiveFeedId ? ' active' : ''}" data-feed-id="${f.id}">
       <div class="feed-card-header">
@@ -284,19 +284,17 @@ _rssRenderFeeds(feeds) {
           <div class="feed-card-meta">
             <span class="feed-card-badge">${String(f.type || 'rss').toUpperCase()}</span>
             <span>${this.t('item_count')(f.entry_count || 0)}</span>
-            <span style="font-size:10px;">${this.t('updated')} ${lastChecked}</span>
+            <span class="feed-card-updated">${this.t('updated')} ${lastChecked}</span>
             ${errorInfo}
           </div>
         </div>
-        <div style="display:flex;gap:4px;">
-          <button class="feed-card-del${f.favorite ? ' favorited' : ''}" data-action="favorite-feed" data-feed-id="${f.id}" title="${f.favorite ? this.t('unfavorite') : this.t('favorite')}">
-            <i class="${f.favorite ? 'fas' : 'far'} fa-star"></i>
-          </button>
+        <div class="feed-card-actions">
+          <button class="feed-card-del${f.favorite ? ' favorited' : ''}" data-action="favorite-feed" data-feed-id="${f.id}" title="${f.favorite ? this.t('unfavorite') : this.t('favorite')}">${f.favorite ? this.t('unfavorite') : this.t('favorite')}</button>
           <button class="feed-card-del" data-action="refresh-feed" data-feed-id="${f.id}" title="${this.t('refresh')}">
-            <i class="fas fa-sync-alt"></i>
+            ${this.t('refresh')}
           </button>
           <button class="feed-card-del" data-action="delete-feed" data-feed-id="${f.id}" title="${this.t('delete')}">
-            <i class="fas fa-trash"></i>
+            ${this.t('delete')}
           </button>
         </div>
       </div>
@@ -502,11 +500,11 @@ async _rssDeleteFeed(feedId) {
 
 async _rssRefreshFeed(feedId) {
   const card = this.feedList.querySelector(`[data-feed-id="${feedId}"]`);
-  const refreshBtn = card?.querySelector('[data-action="refresh-feed"] i');
+  const refreshBtn = card?.querySelector('[data-action="refresh-feed"]');
   const feeds = await this._rssReadStore();
   const idx = feeds.findIndex(f => f.id === feedId);
   if (idx < 0) return;
-  if (refreshBtn) refreshBtn.className = 'fas fa-spinner fa-spin';
+  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = this.t('processing'); }
   try {
     const parsed = await this._rssParseFeed(feeds[idx].url);
     const merged = this._rssMergeFeed(feeds[idx], parsed);
@@ -523,7 +521,7 @@ async _rssRefreshFeed(feedId) {
     await this._rssWriteStore(feeds);
     this._rssShowError(this.t('refresh_failed') + feeds[idx].last_error);
   } finally {
-    if (refreshBtn) refreshBtn.className = 'fas fa-sync-alt';
+    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = this.t('refresh'); }
   }
 },
 

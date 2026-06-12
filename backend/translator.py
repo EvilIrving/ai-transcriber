@@ -1,5 +1,4 @@
 import logging
-import os
 import re
 from typing import Optional
 
@@ -20,7 +19,7 @@ class Translator:
         model: Optional[str] = None,
     ):
         self.client = None
-        self._translation_model = model or os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o")
+        self._translation_model = model or "gpt-4o"
 
         self.language_map = {
             "zh": "中文（简体）",
@@ -38,15 +37,11 @@ class Translator:
             "hi": "हिन्दी",
         }
 
-        eff_key = (api_key.strip() if isinstance(api_key, str) and api_key.strip() else None) or os.getenv(
-            "OPENAI_API_KEY"
-        )
-        if isinstance(api_key, str) and api_key.strip():
-            eff_base = (base_url or "").strip().rstrip("/") or os.getenv(
-                "OPENAI_BASE_URL", "https://api.openai.com/v1"
-            )
+        eff_key = api_key.strip() if isinstance(api_key, str) and api_key.strip() else None
+        if eff_key:
+            eff_base = (base_url or "").strip().rstrip("/") or "https://api.openai.com/v1"
         else:
-            eff_base = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            eff_base = "https://api.openai.com/v1"
 
         if not eff_key:
             logger.debug("未设置可用的 OpenAI API Key，翻译将不可用")

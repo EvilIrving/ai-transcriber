@@ -65,9 +65,19 @@ hidden_imports = [
     # ── yt-dlp extras ──
     "yt_dlp.extractor",
     "yt_dlp.postprocessor",
+    # ── SSL 证书 ──
+    "certifi",
     # ── trafilatura ──
     "trafilatura",
 ]
+
+# ── 收集 certifi CA bundle ──
+try:
+    import certifi as _certifi
+    _certifi_pem = _certifi.where()
+    added_files.append((_certifi_pem, "certifi"))
+except ImportError:
+    pass
 
 # ── 收集 ctranslate2 原生库（.dylib 在隐藏目录 .dylibs/ 下，PyInstaller 可能遗漏） ──
 binaries = []
@@ -90,7 +100,7 @@ if sys.platform == "darwin":
     # .app bundle 信息
     BUNDLE_ID = "com.ai-transcriber.desktop"
     BUNDLE_NAME = "AI视频转录器"
-    BUNDLE_ICON = None  # 需要 .icns 格式，暂无
+    BUNDLE_ICON = str(ROOT / "static" / "icon.icns")
     info_plist = {
         "CFBundleName": BUNDLE_NAME,
         "CFBundleDisplayName": BUNDLE_NAME,
@@ -103,13 +113,13 @@ if sys.platform == "darwin":
 else:
     BUNDLE_NAME = "AI视频转录器"
     info_plist = {}
-    BUNDLE_ICON = None
+    BUNDLE_ICON = None  # .icns is macOS-only
 
 # ── Analysis ──
 a = Analysis(
     [str(ROOT / "start.py")],
     pathex=[str(ROOT), str(BACKEND_DIR)],
-    binaries=[],
+    binaries=binaries,
     datas=added_files,
     hiddenimports=hidden_imports,
     hookspath=[],
@@ -131,58 +141,42 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=None)
 
-# ── EXE / COLLECT ──
+# ── EXE / COLLECT / BUNDLE ──
+# 全平台统一使用 one-dir 模式：启动快（无需每次解压），
+# 且 macOS 上每个嵌套 .dylib/.so 都可被单独签名（公证所需）。
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="ai-transcriber",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    # 仅支持 Apple Silicon (arm64)，不支持 Intel Mac。
+    # ctranslate2 等依赖只有单架构 wheel，无法 universal2，须在 arm64 机器上构建。
+    target_arch=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name=BUNDLE_NAME,
+)
+
 if sys.platform == "darwin":
-    exe = EXE(
-        pyz,
-        a.scripts,
-        [],
-        exclude_binaries=True,
-        name="ai-transcriber",
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=False,
-        upx=True,
-        console=False,       # macOS GUI 模式，不显示终端
-    )
-    # macOS: 打包为 .app bundle
+    # 原生 .app bundle：COLLECT 产物 + .icns + Info.plist
     app = BUNDLE(
-        exe,
+        coll,
         name=f"{BUNDLE_NAME}.app",
         icon=BUNDLE_ICON,
         bundle_identifier=BUNDLE_ID,
         info_plist=info_plist,
-    )
-    coll = COLLECT(
-        exe,
-        a.binaries,
-        a.zipfiles,
-        a.datas,
-        strip=False,
-        upx=True,
-        upx_exclude=[],
-        name=BUNDLE_NAME,
-    )
-else:
-    exe = EXE(
-        pyz,
-        a.scripts,
-        [],
-        exclude_binaries=True,
-        name="ai-transcriber",
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=False,
-        upx=True,
-        console=True,        # Windows/Linux 保留控制台窗口（可看到日志）
-    )
-    coll = COLLECT(
-        exe,
-        a.binaries,
-        a.zipfiles,
-        a.datas,
-        strip=False,
-        upx=True,
-        upx_exclude=[],
-        name=BUNDLE_NAME,
     )

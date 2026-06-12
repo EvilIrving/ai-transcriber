@@ -2,9 +2,7 @@
 window.VTDownloadMethods = {
 _switchDwnTab(tab) {
   this.dwnTabBtns.forEach(b => {
-    const active = b.dataset.dwntab === tab;
-    b.style.borderBottomColor = active ? 'var(--accent)' : 'transparent';
-    b.style.color = active ? 'var(--accent-text)' : 'var(--text-muted)';
+    b.classList.toggle('active', b.dataset.dwntab === tab);
   });
   this.dwnTabPanes.forEach(p => {
     p.style.display = p.id === 'dwnTab' + tab.charAt(0).toUpperCase() + tab.slice(1) ? 'block' : 'none';
@@ -15,7 +13,7 @@ async _dwnDetectFormats() {
   const url = this.dwnUrl.value.trim();
   if (!url) { this._dwnShowError(this.t('url_required')); return; }
   this.dwnDetectBtn.disabled = true;
-  this.dwnDetectBtn.innerHTML = `<span class="spinner"></span> ${this.t('detecting')}`;
+  this.dwnDetectBtn.innerHTML = `<span>${this.t('detecting')}</span>`;
   this._dwnHideError();
   this.dwnFormatsDiv.style.display = 'none';
   this.dwnCompleted.style.display = 'none';
@@ -42,7 +40,7 @@ async _dwnDetectFormats() {
     this._dwnShowError(this.t('detect_failed') + e.message);
   } finally {
     this.dwnDetectBtn.disabled = false;
-    this.dwnDetectBtn.innerHTML = `<i class="fas fa-magnifying-glass"></i> <span>${this.t('detect')}</span>`;
+    this.dwnDetectBtn.innerHTML = `<span>${this.t('detect')}</span>`;
   }
 },
 
@@ -103,7 +101,7 @@ _dwnRenderSubtitleOptions() {
   const allLangs = [...new Set([...manual, ...auto])].sort();
 
   if (!allLangs.length) {
-    this.dwnSubInfo.innerHTML = `<p style="color:var(--text-dim);"><i class="fas fa-circle-info"></i> ${this.t('no_subtitles')}</p>`;
+    this.dwnSubInfo.innerHTML = `<p class="dwn-sub-empty"><i class="fas fa-circle-info"></i> ${this.t('no_subtitles')}</p>`;
     this.dwnSubLang.innerHTML = '';
     this.dwnStartSubBtn.disabled = true;
     return;

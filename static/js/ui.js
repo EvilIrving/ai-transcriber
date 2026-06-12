@@ -31,9 +31,9 @@ _toggleTheme() {
 _updateThemeIcon(theme) {
   if (!this.themeIcon) return;
   this.themeIcon.className = theme === 'light' ? 'fas fa-moon' : 'fas fa-sun';
-}
+},
 
-/* ── Page switching ───────────────────────────────────── */,
+/* ── Page switching ───────────────────────────────────── */
 
 _switchPage(page) {
   this.currentPage = page;
@@ -42,9 +42,59 @@ _switchPage(page) {
   this.pagePanels.forEach(p => p.classList.toggle('active', p.id === 'page' + page.charAt(0).toUpperCase() + page.slice(1)));
   if (page === 'rss') this._rssLoadFeeds();
   if (page === 'history') this._historyLoad();
-}
+},
 
-/* ── Settings persistence ─────────────────────────────── */,
+/* ── Onboarding / first-run check ─────────────────────── */
+
+async _checkFirstRun() {
+  const apiKey = this.apiKeyInput?.value.trim();
+  if (!apiKey) {
+    this._showOnboarding();
+  }
+},
+
+_showOnboarding() {
+  const banner = document.getElementById('onboardingBanner');
+  if (banner) banner.style.display = 'flex';
+  // Auto-expand settings panel
+  if (this.settingsBody && !this.settingsBody.classList.contains('open')) {
+    this.settingsBody.classList.add('open');
+    if (this.settingsToggle) this.settingsToggle.classList.add('open');
+  }
+},
+
+_hideOnboarding() {
+  const banner = document.getElementById('onboardingBanner');
+  if (banner) banner.style.display = 'none';
+},
+
+/* ── Whisper model status polling ────────────────────── */
+
+_startModelPolling() {
+  this._pollModelStatus();
+  this._modelPollTimer = setInterval(() => this._pollModelStatus(), 15000);
+},
+
+async _pollModelStatus() {
+  try {
+    const resp = await fetch(`${this.apiBase}/model-status`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const el = document.getElementById('modelStatus');
+    if (!el) return;
+    if (data.whisper_ready) {
+      el.style.display = 'none';
+      if (this._modelPollTimer) { clearInterval(this._modelPollTimer); this._modelPollTimer = null; }
+    } else {
+      el.style.display = 'inline-flex';
+      el.querySelector('span').textContent = data.whisper_error
+        ? '⚠ Whisper 模型加载失败'
+        : '⏳ Whisper 模型下载中…';
+    }
+  } catch (_) {}
+},
+
+/* ── Settings persistence ─────────────────────────────── */
 
 _saveSettings() {
   const s = {
@@ -73,22 +123,21 @@ _loadSettings() {
     }
     this._updateSettingsStatus();
   } catch (_) {}
-}
+},
 
-/* ── Fetch models ─────────────────────────────────────── */,
+/* ── Fetch models ─────────────────────────────────────── */
 
 async _fetchModels(silent = false) {
   const baseUrl = this.modelBaseUrl.value.trim().replace(/\/$/, '');
   const apiKey  = this.apiKeyInput.value.trim();
   if (!baseUrl || !apiKey) { if (!silent) this._setFetchStatus('err', this.t('api_url_required')); return; }
   this.fetchModelsBtn.disabled = true;
-  this.fetchIcon.className = 'fas fa-spinner fa-spin';
   if (!silent) this._setFetchStatus('', this.t('fetching_models'));
   try {
     const fd = new FormData(); fd.append('base_url', baseUrl); fd.append('api_key', apiKey);
     const data = await this.api.fetchModels(fd);
     const models = data.data || data.models || [];
-    this.modelSelect.innerHTML = `<option value="">${this.t('model_default')}</option>`;
+    this.modelSelect.innerHTML = `<option value="" disabled selected>${this.t('model_select_placeholder')}</option>`;
     models.forEach(m => {
       const opt = document.createElement('option'); opt.value = m.id; opt.textContent = m.name || m.id;
       this.modelSelect.appendChild(opt);
@@ -99,7 +148,8 @@ async _fetchModels(silent = false) {
   } catch (e) {
     this._setFetchStatus('err', this.t('models_error') + ': ' + e.message);
   } finally {
-    this.fetchModelsBtn.disabled = false; this.fetchIcon.className = 'fas fa-sync-alt';
+    this.fetchModelsBtn.disabled = false;
+    if (this.fetchIcon) this.fetchIcon.className = '';
   }
 },
 
@@ -111,13 +161,15 @@ _updateSettingsStatus() {
   const selected = this.modelSelect?.value || '';
   const modelLabel = selected
     ? (this.modelSelect.selectedOptions?.[0]?.textContent || selected)
-    : this.t('model_default');
+    : this.t('model_select_placeholder');
   const text = configured ? modelLabel : this.t('not_configured');
   this.settingsStatus.classList.toggle('configured', configured);
   this.settingsStatus.innerHTML = `<span>${this._escapeHtml(text)}</span>`;
-}
+  // Hide onboarding banner if now configured
+  if (configured) this._hideOnboarding();
+},
 
-/* ── Transcription ────────────────────────────────────── */,
+/* ── Transcription ────────────────────────────────────── */
 
 async _copyTabContent(type) {
   let el, btn;
@@ -130,11 +182,12 @@ async _copyTabContent(type) {
   try {
     await navigator.clipboard.writeText(el.textContent.trim());
     btn.classList.add('copied');
-    const icon = btn.querySelector('i');
-    if (icon) icon.className = 'fas fa-check';
+    const label = btn.querySelector('span');
+    const previous = label ? label.textContent : '';
+    if (label) label.textContent = this.t('completed');
     setTimeout(() => {
       btn.classList.remove('copied');
-      if (icon) icon.className = 'fas fa-copy';
+      if (label) label.textContent = previous;
     }, 1500);
   } catch (e) {
     // Fallback for non-HTTPS
@@ -143,9 +196,9 @@ async _copyTabContent(type) {
     document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); document.body.removeChild(ta);
   }
-}
+},
 
-/* ── Export ─────────────────────────────────────────── */,
+/* ── Export ─────────────────────────────────────────── */
 
 async _exportContent() {
   if (!this.currentTaskId) { this._showError(this.t('error_no_download')); return; }
@@ -191,7 +244,7 @@ _setLoading(on) {
   this.isProcessing = on;
   this.submitBtn.disabled = false;
   this.submitBtn.classList.toggle('processing', on);
-  this.submitBtn.innerHTML = on ? `<span class="spinner"></span> ${this.t('processing')}` : `<i class="fas fa-search"></i> <span>${this.t('start_transcription')}</span>`;
+  this.submitBtn.innerHTML = on ? `<span>${this.t('processing')}</span>` : `<span>${this.t('start_transcription')}</span>`;
   if (this.uploadPickBtn) this.uploadPickBtn.disabled = on;
   if (this.uploadZone) { this.uploadZone.style.pointerEvents = on ? 'none' : ''; this.uploadZone.style.opacity = on ? '0.65' : ''; this.uploadZone.tabIndex = on ? -1 : 0; }
   if (this.fileInput) this.fileInput.disabled = on;

@@ -35,6 +35,8 @@ class VideoTranscriber {
     this._bindEvents();
     this._initTheme();
     this._loadSettings();
+    this._checkFirstRun();
+    this._startModelPolling();
     const savedLang = localStorage.getItem('vt_ui_lang');
     this._switchLang(this.i18n[savedLang] ? savedLang : 'en');
   }
@@ -160,10 +162,10 @@ class VideoTranscriber {
     // Transcribe form
     this.form.addEventListener('submit', (e) => { e.preventDefault(); this._startTranscription(); });
     this.submitBtn.addEventListener('mouseenter', () => {
-      if (this.isProcessing) this.submitBtn.innerHTML = `<i class="fas fa-xmark"></i> <span>${this.t('cancel')}</span>`;
+      if (this.isProcessing) this.submitBtn.innerHTML = `<span>${this.t('cancel')}</span>`;
     });
     this.submitBtn.addEventListener('mouseleave', () => {
-      if (this.isProcessing) this.submitBtn.innerHTML = `<span class="spinner"></span> ${this.t('processing')}`;
+      if (this.isProcessing) this.submitBtn.innerHTML = `<span>${this.t('processing')}</span>`;
     });
     // Lang
     if (this.langSelect) this.langSelect.addEventListener('change', () => this._switchLang(this.langSelect.value));
@@ -188,6 +190,13 @@ class VideoTranscriber {
       this.useTwoStep = this.twoStepToggle.checked;
       this._saveSettings();
     });
+    // Window close protection — warn if task is active
+    window.addEventListener('beforeunload', (e) => {
+      if (this.isProcessing || this.dwnTaskId) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
     // Tabs
     this.tabBtns.forEach(btn => { btn.addEventListener('click', () => this._switchResultTab(btn.dataset.tab)); });
     // Export
@@ -203,10 +212,7 @@ class VideoTranscriber {
     // Upload
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => { e.stopPropagation(); this.fileInput.click(); });
-      this.uploadZone.addEventListener('click', (e) => {
-        if (e.target === this.uploadPickBtn || this.uploadPickBtn.contains(e.target)) return;
-        this.fileInput.click();
-      });
+      this.uploadZone.addEventListener('click', () => this.fileInput.click());
       this.fileInput.addEventListener('change', () => {
         const f = this.fileInput.files && this.fileInput.files[0];
         this.fileInput.value = '';
