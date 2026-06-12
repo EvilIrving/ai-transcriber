@@ -6,7 +6,7 @@ English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](READM
 
 Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a local file — audio, video, even plain text if you just want a summary. The tool grabs subtitles when they're available, falls back to Whisper transcription when they're not, then cleans everything up with an LLM. RSS automation is built in for recurring sources.
 
-![Screenshot 1](SCR-20260610-jnsb-2.png)
+![Screenshot 1](SCR-20260610-mbvm-2.png)
 ![Screenshot 2](SCR-20260610-jnzj.png)
 ![Screenshot 3](SCR-20260610-jodn.png)
 
