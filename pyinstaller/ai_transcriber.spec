@@ -100,7 +100,7 @@ if sys.platform == "darwin":
     # .app bundle 信息
     BUNDLE_ID = "com.ai-transcriber.desktop"
     BUNDLE_NAME = "AI Transcriber"
-    BUNDLE_ICON = str(ROOT / "static" / "icon.icns")
+    BUNDLE_ICON = str(ROOT / "pyinstaller" / "icon.icns")
     info_plist = {
         "CFBundleName": BUNDLE_NAME,
         "CFBundleDisplayName": BUNDLE_NAME,

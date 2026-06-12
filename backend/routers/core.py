@@ -12,7 +12,7 @@ router = APIRouter()
 
 @router.get("/")
 async def read_root():
-    """返回前端页面"""
+    """返回前端页面（React SPA 构建产物）"""
     return FileResponse(str(PROJECT_ROOT / "static" / "index.html"))
 
 

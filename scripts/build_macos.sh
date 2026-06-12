@@ -81,8 +81,9 @@ echo "🎨 步骤 3/5: 生成 .icns 图标..."
 ICONSET_DIR="$ROOT/build/icon.iconset"
 mkdir -p "$ICONSET_DIR"
 
-SVG_SRC="$ROOT/static/icon_light.svg"
-ICNS_OUT="$ROOT/static/icon.icns"
+SVG_SRC="$ROOT/frontend/public/icon_light.svg"
+ICNS_OUT="$ROOT/pyinstaller/icon.icns"
+mkdir -p "$(dirname "$ICNS_OUT")"
 
 _build_icns_from_png() {
     local src_png="$1"

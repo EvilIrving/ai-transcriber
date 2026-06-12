@@ -1,8 +1,8 @@
-import os
 import openai
 import logging
 from typing import Optional
 
+from config import settings
 from llm_sanitize import strip_llm_artifacts
 
 logger = logging.getLogger(__name__)
@@ -17,8 +17,8 @@ class Summarizer:
         优先级：参数 > 环境变量。
         model 指定时会同时作为 fast_model 和 advanced_model 使用。
         """
-        effective_key = api_key or None
-        effective_url = base_url or None
+        effective_key = api_key or settings.openai_api_key or None
+        effective_url = base_url or settings.openai_base_url or None
 
         if not effective_key:
             logger.debug("未提供 API Key，将无法使用摘要功能")
@@ -31,18 +31,18 @@ class Summarizer:
             else:
                 logger.info("OpenAI客户端已初始化，使用默认端点")
             # 设置超时防止 LLM 调用无限期阻塞
-            kwargs.setdefault("timeout", 120.0)
-            kwargs.setdefault("max_retries", 1)
+            kwargs.setdefault("timeout", settings.llm_request_timeout_sec)
+            kwargs.setdefault("max_retries", settings.llm_max_retries)
             self.client = openai.OpenAI(**kwargs)
         else:
             self.client = None
 
-        # 模型选择优先级：构造函数参数 > 环境变量 > 默认值
-        # FAST_MODEL 用于格式化/纠错，SMART_MODEL 用于摘要/翻译
-        self.fast_model = model or "gpt-3.5-turbo"
-        self.advanced_model = model or "gpt-4o"
-        # LLM 总超时（兜底），可通过环境变量调整
-        self._llm_timeout = float(os.getenv("LLM_TIMEOUT_SEC", "300"))
+        # 模型选择优先级：构造函数参数 > config.settings 默认值
+        # fast_model 用于格式化/纠错，advanced_model 用于摘要/翻译
+        self.fast_model = model or settings.fast_model
+        self.advanced_model = model or settings.advanced_model
+        # LLM 总超时（兜底），集中在 config.settings 调整
+        self._llm_timeout = settings.llm_timeout_sec
         
         # 支持的语言映射
         self.language_map = {
