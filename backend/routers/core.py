@@ -1,6 +1,5 @@
 """核心路由：前端入口页与模型列表代理。"""
 import asyncio
-import os
 
 import openai
 from fastapi import APIRouter, Form, HTTPException
@@ -23,8 +22,8 @@ async def list_models(
     api_key: str = Form(default=""),
 ):
     """Proxy: fetch model list from any OpenAI-compatible API."""
-    effective_key = api_key or os.getenv("OPENAI_API_KEY", "")
-    effective_url = base_url.rstrip("/") or os.getenv("OPENAI_BASE_URL") or None
+    effective_key = api_key
+    effective_url = base_url.rstrip("/") or None
 
     if not effective_key:
         raise HTTPException(status_code=400, detail="API key is required")
@@ -38,3 +37,5 @@ async def list_models(
         return {"data": models}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+

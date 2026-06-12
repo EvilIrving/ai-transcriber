@@ -53,9 +53,9 @@ _buildFormData(url) {
   if (baseUrl) fd.append('model_base_url', baseUrl);
   if (modelId) fd.append('model_id', modelId);
   return fd;
-}
+},
 
-/* ── SSE ──────────────────────────────────────────────── */,
+/* ── SSE ──────────────────────────────────────────────── */
 
 _startSSE() {
   if (!this.currentTaskId) return;
@@ -119,9 +119,9 @@ async _cancelCurrentTask() {
   this._clearResultsArea();
   this.partialSummaryShown = false;
   this.progressMessage.textContent = '';
-}
+},
 
-/* ── Stage-weighted Progress (dual bar) ───────────────── */,
+/* ── Stage-weighted Progress (dual bar) ───────────────── */
 
 _updateProgressFromTask(task) {
   const pct = this._clampPct(task.progress || 0);
@@ -179,9 +179,9 @@ _renderStageChain(task) {
     const title = stage.detail || stage.label || stage.name;
     return `<span class="prog-step ${this._escapeHtml(state)}" title="${this._escapeHtml(title)}"><span class="prog-step-dot"></span><span>${this._escapeHtml(stage.name || '')}</span></span>`;
   }).join('');
-}
+},
 
-/* ── Smart Progress (fallback for legacy tasks) ───────── */,
+/* ── Smart Progress (fallback for legacy tasks) ───────── */
 
 _initSP() {
   this.sp.enabled = false; this.sp.current = 0; this.sp.target = 15;
@@ -215,9 +215,9 @@ _tickSP() {
     this.progressStatus.textContent = Math.round(pct) + '%';
     this.progressFill.style.width = pct + '%';
   }
-}
+},
 
-/* ── Results ──────────────────────────────────────────── */,
+/* ── Results ──────────────────────────────────────────── */
 
 _normLangTab(code) {
   if (!code) return '';
@@ -247,7 +247,7 @@ _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang
 
 _showPartialSummary(task) {
   this.partialSummaryShown = true;
-  this.scriptContent.innerHTML = `<p style="color:var(--text-muted);font-style:italic;">${this.t('transcript_pending')}</p>`;
+  this.scriptContent.innerHTML = `<p class="muted-note">${this.t('transcript_pending')}</p>`;
   this.summaryContent.innerHTML = marked.parse(task.summary);
   this.translationTabBtn.style.display = 'none';
   this.resultsPanel.classList.add('show');

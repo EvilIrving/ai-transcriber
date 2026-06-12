@@ -4,63 +4,75 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Video Transcriber</title>
-  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
+  <link rel="icon" type="image/svg+xml" href="/static/icon_dark.svg" media="(prefers-color-scheme: dark)">
+  <link rel="icon" type="image/svg+xml" href="/static/icon_light.svg" media="(prefers-color-scheme: light)">
+  <link rel="icon" type="image/svg+xml" href="/static/icon_dark.svg">
+  <link rel="stylesheet" href="/static/vendor/fontawesome.min.css">
+  <script src="/static/vendor/marked.min.js"></script>
   <style>
     :root {
-      --bg:           #0d0b09;
-      --surface:      #171310;
-      --surface-2:    #1f1b17;
-      --surface-3:    #27221d;
-      --border:       #2e271f;
-      --border-light: #3a3028;
-      --accent:       #c07830;
-      --accent-h:     #d08840;
-      --accent-dim:   #7a4c1e;
-      --accent-text:  #e0a060;
-      --text:         #ddd5cb;
-      --text-muted:   #8c7e70;
-      --text-dim:     #7a6c5e;
-      --success:      #6ab87a;
-      --error:        #e07878;
+      --bg:           oklch(17% 0.004 75);
+      --surface:      oklch(22% 0.005 75);
+      --surface-2:    oklch(27% 0.006 75);
+      --surface-3:    oklch(32% 0.007 75);
+      --border:       oklch(38% 0.008 75);
+      --border-light: oklch(44% 0.009 75);
+      --accent:       oklch(58% 0.13 60);
+      --accent-h:     oklch(63% 0.13 60);
+      --accent-dim:   oklch(42% 0.10 60);
+      --accent-text:  oklch(68% 0.13 60);
+      --text:         oklch(88% 0.004 75);
+      --text-muted:   oklch(60% 0.006 75);
+      --text-dim:     oklch(42% 0.006 75);
+      --success:      oklch(65% 0.12 145);
+      --error:        oklch(58% 0.15 25);
       --r:            12px;
       --r-sm:         8px;
+      --control-radius: 7px;
+      --control-h:    40px;
+      --control-md:   34px;
+      --control-sm:   28px;
       --accent-rgb:   192,120,48;
       --success-rgb:  106,184,122;
       --error-rgb:    224,120,120;
-      --text-on-accent: #fff;
-      --star:         #f5b400;
+      --text-on-accent: oklch(98% 0.005 75);
+      --star:         oklch(78% 0.17 80);
     }
     [data-theme="light"] {
-      --bg:           #faf8f5;
-      --surface:      #ffffff;
-      --surface-2:    #f5f2ed;
-      --surface-3:    #ede8e0;
-      --border:       #e0d9ce;
-      --border-light: #d5cdc0;
-      --accent:       #b06820;
-      --accent-h:     #8b4e1a;
-      --accent-dim:   #c08840;
-      --accent-text:  #8b5e2a;
-      --text:         #2c2416;
-      --text-muted:   #6b5e4a;
-      --text-dim:     #a89880;
-      --success:      #4a8a5a;
-      --error:        #c05050;
+      --bg:           oklch(97% 0.004 85);
+      --surface:      oklch(99% 0.003 85);
+      --surface-2:    oklch(96% 0.004 85);
+      --surface-3:    oklch(93% 0.005 85);
+      --border:       oklch(88% 0.007 85);
+      --border-light: oklch(84% 0.008 85);
+      --accent:       oklch(53% 0.13 60);
+      --accent-h:     oklch(48% 0.13 60);
+      --accent-dim:   oklch(56% 0.11 60);
+      --accent-text:  oklch(44% 0.11 60);
+      --text:         oklch(20% 0.006 85);
+      --text-muted:   oklch(45% 0.007 85);
+      --text-dim:     oklch(65% 0.006 85);
+      --success:      oklch(52% 0.12 145);
+      --error:        oklch(50% 0.15 25);
       --accent-rgb:   176,104,32;
       --success-rgb:  74,138,90;
       --error-rgb:    192,80,80;
-      --text-on-accent: #fff;
-      --star:         #d49800;
+      --text-on-accent: oklch(98% 0.004 85);
+      --star:         oklch(68% 0.16 80);
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     button, a, select, input, textarea, [role="button"] {
       -webkit-tap-highlight-color: transparent;
       accent-color: var(--accent);
     }
-    button:focus { outline: none; }
-    button:focus-visible {
+    button, input, select, textarea { font: inherit; }
+    button:focus, input:focus, select:focus, textarea:focus, a:focus { outline: none; }
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    a:focus-visible,
+    [role="button"]:focus-visible {
       outline: none;
       box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.18);
       border-color: var(--accent-dim);
@@ -71,6 +83,8 @@
       color: var(--text);
       min-height: 100vh;
       line-height: 1.6;
+      display: flex;
+      flex-direction: column;
     }
     body.list-page-active {
       height: 100dvh; overflow: hidden;
@@ -80,24 +94,21 @@
     .navbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 28px; border-bottom: 1px solid var(--border); }
     .nav-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
     .nav-logo img { width: 26px; height: 26px; object-fit: contain; }
-    .nav-logo-text { font-size: 15px; font-weight: 650; color: var(--text); letter-spacing: -0.01em; }
+    .nav-logo .logo-light { display: none; }
+    [data-theme="light"] .nav-logo .logo-dark { display: none; }
+    [data-theme="light"] .nav-logo .logo-light { display: block; }
+    .nav-logo-text { font-size: 15px; font-weight: 650; color: var(--text); letter-spacing: 0; }
     .nav-logo-text em { color: var(--accent-text); font-style: normal; }
-    .nav-logo-text {
-      background: linear-gradient(110deg, var(--text) 30%, var(--accent-text) 45%, var(--text) 55%);
-      background-size: 200% 100%; background-clip: text; -webkit-background-clip: text;
-      color: transparent; animation: logo-shimmer 3s ease-in-out infinite;
-    }
-    .nav-logo-text em { color: inherit; }
-    @keyframes logo-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-    .nav-actions { display: flex; align-items: center; gap: 8px; }
+    .nav-actions { display: flex; align-items: center; gap: 6px; }
     .icon-btn {
       background: var(--surface-2); color: var(--text-muted);
-      border: 1px solid var(--border); border-radius: 20px;
-      padding: 6px 12px; font-size: 13px; font-weight: 500;
+      border: 1px solid var(--border); border-radius: var(--control-radius);
+      min-height: var(--control-md); padding: 0 11px; font-size: 13px; font-weight: 550;
       cursor: pointer; display: flex; align-items: center; gap: 6px;
-      transition: color .2s, border-color .2s;
+      transition: color .2s, border-color .2s, background .2s, transform .1s;
     }
-    .icon-btn:hover { color: var(--accent-text); border-color: var(--accent-dim); }
+    .icon-btn:hover { color: var(--accent-text); border-color: var(--accent-dim); background: var(--surface-3); }
+    .icon-btn:active { transform: scale(.98); }
     /* Tabs nav */
     .tab-nav {
       display: flex; gap: 0; border-bottom: 0;
@@ -106,14 +117,14 @@
     .tab-nav-btn {
       background: none; border: none; border-bottom: 2px solid transparent;
       color: var(--text-muted); font-size: 14px; font-weight: 550;
-      padding: 10px 20px; cursor: pointer; margin-bottom: -1px;
+      padding: 8px 16px; cursor: pointer; margin-bottom: -1px;
       transition: color .2s, border-color .2s; display: flex; align-items: center; gap: 7px;
     }
     .tab-nav-btn:hover { color: var(--text); }
     .tab-nav-btn.active { color: var(--accent-text); border-bottom-color: var(--accent); }
     .tab-nav-btn .badge { font-size: 10px; background: var(--accent-dim); color: var(--text-on-accent); border-radius: 10px; padding: 1px 7px; }
     /* Main */
-    .main { width: 100%; max-width: 1024px; margin: 0 auto; padding: 36px 24px 80px; }
+    .main { width: 100%; max-width: 1024px; margin: 0 auto; padding: 36px 24px 56px; flex: 1 0 auto; }
     .page-panel { display: none; }
     .page-panel.active { display: block; }
     .page-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
@@ -123,16 +134,18 @@
     /* Error */
     .error-banner { display: none; background: rgba(var(--error-rgb),.1); border: 1px solid rgba(var(--error-rgb),.3); border-radius: var(--r-sm); padding: 11px 14px; font-size: 13px; color: var(--error); margin-bottom: 16px; gap: 8px; align-items: flex-start; }
     .error-banner.show { display: flex; }
+    .error-banner.notice { background: rgba(var(--accent-rgb),.1); border-color: rgba(var(--accent-rgb),.3); color: var(--accent-text); }
+    .banner-icon { margin-top: 1px; flex-shrink: 0; }
     /* URL row */
-    .input-row { display: flex; gap: 10px; margin-bottom: 10px; }
+    .input-row { display: flex; gap: 8px; margin-bottom: 8px; }
     .url-wrap { position: relative; flex: 1; }
     .url-wrap .url-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--text-dim); font-size: 13px; pointer-events: none; }
-    .url-input { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 15px; padding: 13px 14px 13px 36px; outline: none; transition: border-color .2s, box-shadow .2s; }
+    .url-input { width: 100%; min-height: var(--control-h); background: var(--surface); border: 1px solid var(--border); border-radius: var(--control-radius); color: var(--text); font-size: 14px; padding: 0 12px 0 34px; outline: none; transition: border-color .2s, box-shadow .2s, background .2s; }
     .url-input::placeholder { color: var(--text-dim); }
     .url-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.12); }
     .btn-go {
-      background: var(--accent); color: var(--text-on-accent); border: none; border-radius: 10px;
-      padding: 13px 22px; font-size: 15px; font-weight: 600; cursor: pointer;
+      background: var(--accent); color: var(--text-on-accent); border: none; border-radius: var(--control-radius);
+      min-height: var(--control-h); padding: 0 16px; font-size: 14px; font-weight: 600; cursor: pointer;
       display: flex; align-items: center; gap: 8px; white-space: nowrap; flex-shrink: 0;
       transition: background .2s, transform .1s, opacity .2s;
     }
@@ -141,7 +154,7 @@
     .btn-go:active { transform: scale(.98); }
     .btn-go:disabled { opacity: .5; cursor: not-allowed; transform: none; }
     /* Upload */
-    .upload-section { margin-bottom: 18px; }
+    .upload-section { margin-bottom: 14px; }
     .upload-zone .upload-or { font-size: 13px; color: var(--text-dim); margin: 0 0 8px; }
     .upload-zone {
       border: 1px dashed var(--border-light); border-radius: var(--r);
@@ -152,70 +165,84 @@
     .upload-zone.dragover { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.15); }
     .upload-zone .upload-formats { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5; }
     .btn-upload-pill {
-      display: inline-flex; align-items: center; gap: 8px; padding: 9px 20px;
-      border-radius: 999px; border: 1px solid var(--border-light);
-      background: var(--surface); color: var(--text); font-size: 14px;
-      font-weight: 600; cursor: pointer; transition: border-color .2s, color .2s, background .2s;
+      min-height: var(--control-md); display: inline-flex; align-items: center; gap: 8px; padding: 0 13px;
+      border-radius: var(--control-radius); border: 1px solid var(--border-light);
+      background: var(--surface); color: var(--text); font-size: 13px;
+      font-weight: 600; cursor: pointer; transition: border-color .2s, color .2s, background .2s, transform .1s;
     }
     .btn-upload-pill:hover { border-color: var(--accent); color: var(--accent-text); }
+    .btn-upload-pill:active { transform: scale(.98); }
     .btn-upload-pill:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
     /* Settings */
-    .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; flex-wrap: wrap; }
-    .settings-toggle { background: none; border: none; color: var(--text-dim); font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 4px 0; transition: color .2s; user-select: none; flex-shrink: 0; }
-    .settings-status { display:inline-flex; align-items:center; gap:5px; padding:2px 7px; border:1px solid var(--border); border-radius:999px; background:var(--surface-2); color:var(--text-muted); font-size:11px; max-width:180px; }
+    .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 0; flex-wrap: wrap; }
+    .settings-toggle { min-height: var(--control-md); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--control-radius); color: var(--text-muted); font-size: 13px; font-weight: 550; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 0 11px; transition: color .2s, border-color .2s, background .2s, transform .1s; user-select: none; flex-shrink: 0; }
+    .settings-status { min-height: var(--control-md); display:inline-flex; align-items:center; gap:6px; padding:0 10px; border:1px solid var(--border); border-radius:var(--control-radius); background:var(--surface-2); color:var(--text-muted); font-size:12px; font-weight:500; line-height:1; max-width:220px; }
     .settings-status::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--accent); flex-shrink:0; }
     .settings-status.configured::before { background:var(--success); }
     .settings-status span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .settings-inline-model { display:flex; align-items:center; gap:8px; min-width:220px; flex:1; justify-content:flex-end; }
     .settings-inline-model .s-select { max-width:320px; }
-    .settings-toggle:hover { color: var(--accent-text); }
-    .settings-toggle .arrow { font-size: 9px; transition: transform .25s; }
-    .settings-toggle.open .arrow { transform: rotate(180deg); }
-    .inline-lang { display: flex; align-items: center; gap: 8px; }
+    .settings-toggle:hover { color: var(--accent-text); border-color: var(--accent-dim); background: var(--surface-3); }
+    .settings-toggle:active { transform: scale(.98); }
+    .inline-lang { display: flex; align-items: center; gap: 6px; }
     .inline-lang-label { font-size: 13px; color: var(--text-dim); white-space: nowrap; }
-    .inline-lang-select {
-      background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-sm);
-      color: var(--text); font-size: 13px; padding: 5px 26px 5px 9px; outline: none;
+    .inline-lang-select,
+    .s-select,
+    .export-fmt,
+    .dwn-inline-field select,
+    .dwn-subtitle-row select {
+      background-color: var(--surface-2); border: 1px solid var(--border); border-radius: var(--control-radius);
+      min-height: var(--control-md); color: var(--text); font-size: 13px; font-weight: 500; padding: 0 30px 0 11px; outline: none;
       cursor: pointer; appearance: none;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238c7e70' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat; background-position: right 8px center;
-      transition: border-color .2s, box-shadow .2s;
+      background-repeat: no-repeat; background-position: right 10px center;
+      background-size: 10px 6px;
+      transition: color .2s, border-color .2s, box-shadow .2s, background-color .2s;
     }
-    [data-theme="light"] .inline-lang-select {
+    select.icon-btn {
+      display: inline-block;
+      padding: 0 10px;
+      -webkit-appearance: auto;
+      appearance: auto;
+    }
+    select.icon-btn:hover,
+    .inline-lang-select:hover,
+    .s-select:hover,
+    .export-fmt:hover,
+    .dwn-inline-field select:hover,
+    .dwn-subtitle-row select:hover { border-color: var(--accent-dim); background-color: var(--surface-3); }
+    [data-theme="light"] .inline-lang-select,
+    [data-theme="light"] .s-select,
+    [data-theme="light"] .export-fmt,
+    [data-theme="light"] .dwn-inline-field select,
+    [data-theme="light"] .dwn-subtitle-row select {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a89880' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     }
     .inline-lang-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.1); }
     .settings-body { overflow: hidden; max-height: 0; transition: max-height .3s ease, margin-top .3s; }
-    .settings-body.open { max-height: 240px; margin-top: 12px; }
-    .settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 16px; }
-    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .settings-body.open { max-height: 240px; margin-top: 10px; }
+    .settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--control-radius); padding: 14px; }
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .settings-grid .span2 { grid-column: 1 / -1; }
     .s-label { display: block; font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); margin-bottom: 5px; }
-    .s-input, .s-select {
+    .s-input {
       width: 100%; background: var(--surface-2); border: 1px solid var(--border);
-      border-radius: var(--r-sm); color: var(--text); font-size: 13px;
-      padding: 8px 11px; outline: none; transition: border-color .2s, box-shadow .2s;
+      border-radius: var(--control-radius); color: var(--text); font-size: 13px;
+      min-height: var(--control-md); padding: 0 10px; outline: none; transition: border-color .2s, box-shadow .2s, background .2s;
     }
     .s-input::placeholder { color: var(--text-dim); }
     .s-input:focus, .s-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.1); }
-    .s-select {
-      cursor: pointer; appearance: none; padding-right: 28px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238c7e70' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat; background-position: right 10px center;
-    }
-    [data-theme="light"] .s-select {
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a89880' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    }
     .s-select option { background: var(--surface-2); }
-    .key-row { display: flex; gap: 7px; }
+    .key-row { display: flex; gap: 6px; }
     .key-row .s-input { flex: 1; min-width: 0; }
     .btn-fetch {
       background: var(--surface-3); border: 1px solid var(--border); color: var(--text-muted);
-      border-radius: var(--r-sm); padding: 8px 11px; font-size: 12px; font-weight: 500;
+      min-height: var(--control-md); border-radius: var(--control-radius); padding: 0 10px; font-size: 12px; font-weight: 500;
       cursor: pointer; white-space: nowrap; flex-shrink: 0; display: flex; align-items: center; gap: 5px;
-      transition: all .2s;
+      transition: color .2s, border-color .2s, background .2s, transform .1s, opacity .2s;
     }
-    .btn-fetch:hover { border-color: var(--accent-dim); color: var(--accent-text); }
+    .btn-fetch:hover { border-color: var(--accent-dim); color: var(--accent-text); background: var(--surface-2); }
+    .btn-fetch:active { transform: scale(.98); }
     .btn-fetch:disabled { opacity: .5; cursor: not-allowed; }
     .fetch-status { font-size: 11px; margin-top: 4px; min-height: 16px; }
     .fetch-status.ok { color: var(--success); }
@@ -268,21 +295,28 @@
     .results-panel { display: none; }
     .results-panel.show { display: block; }
     .res-top { display: none; }
-    .btn-dl { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all .2s; }
-    .btn-dl:hover { border-color: var(--accent-dim); color: var(--accent-text); }
-    .btn-dl.copied { color: var(--success); border-color: rgba(var(--success-rgb),.4); }
-    .export-fmt { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; padding: 6px 8px; font-size: 12px; font-weight: 500; cursor: pointer; }
-    .tab-bar { display: flex; align-items:center; border-bottom: 1px solid var(--border); padding: 0 18px; margin-top: 6px; gap:4px; flex-wrap:wrap; }
-    .tab-actions { margin-left:auto; display:flex; align-items:center; gap:8px; padding-left:12px; }
-    .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 13px; font-weight: 500; padding: 9px 14px; cursor: pointer; margin-bottom: -1px; transition: color .2s, border-color .2s; }
+    .btn-dl,
+    .btn-copy-pane {
+      min-height: var(--control-sm); background: var(--surface-2); border: 1px solid var(--border);
+      color: var(--text-muted); border-radius: var(--control-radius); padding: 0 9px; font-size: 12px;
+      font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      line-height: 1; transition: color .2s, border-color .2s, background .2s, transform .1s, opacity .2s;
+    }
+    .btn-dl:hover,
+    .btn-copy-pane:hover { border-color: var(--accent-dim); color: var(--accent-text); background: var(--surface-3); }
+    .btn-dl:active,
+    .btn-copy-pane:active { transform: scale(.98); }
+    .btn-dl.copied,
+    .btn-copy-pane.copied { color: var(--success); border-color: rgba(var(--success-rgb),.4); background: rgba(var(--success-rgb),.08); }
+    .export-fmt { min-height: var(--control-sm); font-size: 12px; color: var(--text-muted); padding-left: 9px; }
+    .tab-bar { display: flex; align-items:center; border-bottom: 1px solid var(--border); padding: 0 14px; margin-top: 6px; gap:3px; flex-wrap:wrap; }
+    .tab-actions { margin-left:auto; display:flex; align-items:center; gap:6px; padding-left:10px; }
+    .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 13px; font-weight: 500; padding: 8px 12px; cursor: pointer; margin-bottom: -1px; transition: color .2s, border-color .2s; }
     .tab-btn:hover { color: var(--text); }
     .tab-btn.active { color: var(--accent-text); border-bottom-color: var(--accent); }
     .tab-pane { display: none; padding: 16px 20px 24px; }
     .tab-pane.active { display: block; }
     .tab-pane-head { display: none; }
-    .btn-copy-pane { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all .2s; }
-    .btn-copy-pane:hover { border-color: var(--accent-dim); color: var(--accent-text); }
-    .btn-copy-pane.copied { color: var(--success); border-color: rgba(var(--success-rgb),.4); }
     .tab-pane-scroll { max-height: 520px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
     /* Global scrollbar (inside .main) */
     .main ::-webkit-scrollbar { width: 5px; }
@@ -295,6 +329,7 @@
     .md-content h2 { font-size: 1.15rem; margin: 22px 0 8px; }
     .md-content h3 { font-size: 1rem; margin: 16px 0 6px; }
     .md-content p { margin-bottom: 13px; }
+    .muted-note { color: var(--text-muted); font-style: italic; }
     .md-content ul, .md-content ol { margin: 8px 0 14px; padding-left: 1.35rem; }
     .md-content li { margin: 5px 0; padding-left: 2px; }
     .md-content li > p { margin-bottom: 6px; }
@@ -311,7 +346,7 @@
     }
     .md-content pre code { background: none; border: none; padding: 0; }
     .md-content hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
-    .md-content blockquote { border:1px solid var(--border); border-left: 3px solid var(--accent-dim); border-radius:var(--r-sm); background:var(--surface-2); padding:10px 14px; color: var(--text-muted); margin: 14px 0; }
+    .md-content blockquote { border:1px solid rgba(var(--accent-rgb),.28); border-radius:var(--r-sm); background:rgba(var(--accent-rgb),.07); padding:10px 14px; color: var(--text-muted); margin: 14px 0; }
     .md-content table { width:100%; border-collapse:collapse; margin:14px 0 18px; display:block; overflow-x:auto; }
     .md-content th, .md-content td { border:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
     .md-content th { background:var(--surface-2); color:var(--accent-text); font-weight:650; }
@@ -320,19 +355,19 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner-dark { border-color: rgba(0,0,0,.12); border-top-color: var(--text-muted); }
     /* Footer */
-    .footer { text-align: center; padding: 36px 24px; color: var(--text-dim); font-size: 12px; border-top: 1px solid var(--border); margin-top: 48px; }
+    .footer { text-align: center; padding: 22px 24px 14px; color: var(--text-dim); font-size: 12px; border-top: 1px solid var(--border); margin-top: 24px; flex-shrink: 0; }
     .footer a { color: var(--accent-text); text-decoration: none; }
     .footer .repo-primary { font-weight: 650; }
     /* Download page */
     .fmt-list { max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm); margin: 12px 0; }
     .fmt-item {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer;
-      transition: background .15s; gap: 10px;
+      padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer;
+      transition: background .15s, box-shadow .15s; gap: 10px;
     }
     .fmt-item:last-child { border-bottom: none; }
     .fmt-item:hover { background: var(--surface-2); }
-    .fmt-item.selected { background: var(--surface-3); border-left: 2px solid var(--accent); }
+    .fmt-item.selected { background: rgba(var(--accent-rgb),.08); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb),.28); }
     .fmt-item .fmt-main { display: flex; flex-direction: column; gap: 2px; }
     .fmt-item .fmt-name { font-size: 14px; font-weight: 550; }
     .fmt-item .fmt-detail { font-size: 11px; color: var(--text-dim); }
@@ -340,13 +375,34 @@
     .dwn-empty { text-align: center; padding: 30px 20px; color: var(--text-dim); font-size: 14px; }
     .dwn-loading { text-align: center; padding: 30px 20px; color: var(--text-muted); }
     /* Download tabs */
-    .dwn-tab-btn { transition: color .2s, border-color .2s; }
-    .dwn-tab-btn:hover { color: var(--accent-text); }
+    .dwn-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 12px; gap: 4px; }
+    .dwn-tab-btn {
+      min-height: var(--control-md); background: none; border: none; border-bottom: 2px solid transparent;
+      color: var(--text-muted); font-size: 13px; font-weight: 550; padding: 0 12px; cursor: pointer;
+      margin-bottom: -1px; display: inline-flex; align-items: center; gap: 7px;
+      transition: color .2s, border-color .2s, background .2s;
+    }
+    .dwn-tab-btn:hover { color: var(--text); }
+    .dwn-tab-btn.active { color: var(--accent-text); border-bottom-color: var(--accent); }
     .dwn-tab-pane { }
+    .dwn-field-note { font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+    .dwn-sub-info { font-size: 13px; color: var(--text-muted); margin-bottom: 10px; }
+    .dwn-sub-empty { color: var(--text-dim); }
+    .dwn-inline-field { margin-top: 8px; }
+    .dwn-inline-field label,
+    .dwn-subtitle-row { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 8px; }
+    .dwn-inline-field select,
+    .dwn-subtitle-row select { min-height: var(--control-sm); font-size: 12px; flex: 1; }
+    .dwn-start-btn { width: 100%; justify-content: center; margin-top: 12px; }
+    .dwn-completed { display: none; text-align: center; padding: 30px; }
+    .dwn-completed-title { font-size: 1.2rem; color: var(--success); margin-bottom: 12px; }
+    .dwn-completed-file { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+    .dwn-file-link { display: inline-flex; text-decoration: none; }
+    .inline-info { font-size: 11px; color: var(--text-dim); margin-top: 20px; }
     /* RSS page */
     .page-topbar-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .rss-search-row { margin-bottom: 10px; }
-    .rss-add-row { display: flex; gap: 10px; margin-bottom: 12px; }
+    .rss-add-row { display: flex; gap: 8px; margin-bottom: 10px; }
     .rss-add-row .url-input { flex: 1; }
     .rss-summary-bar {
       font-size: 12px; color: var(--text-muted); margin-bottom: 10px;
@@ -359,7 +415,7 @@
     }
     .feed-card {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
-      padding: 14px 16px; cursor: default; transition: border-color .2s, box-shadow .2s;
+      padding: 12px 14px; cursor: default; transition: border-color .2s, box-shadow .2s;
       flex-shrink: 0;
     }
     .feed-card:hover { border-color: var(--accent-dim); }
@@ -378,8 +434,18 @@
     .feed-card-title { font-weight: 650; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .feed-card-meta { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 10px; align-items: center; overflow: hidden; }
     .feed-card-badge { font-size: 9.5px; padding: 1.5px 7px; border-radius: 10px; background: var(--surface-3); color: var(--text-muted); }
-    .feed-card-del { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 4px 6px; }
-    .feed-card-del:hover { color: var(--error); }
+    .feed-card-updated { font-size: 10px; }
+    .feed-card-error { color: var(--error); font-size: 10px; }
+    .feed-new-badge { background: var(--accent); color: var(--text-on-accent); }
+    .feed-card-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+    .feed-card-del {
+      min-height: var(--control-sm); display: inline-flex; align-items: center; justify-content: center;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--control-radius);
+      color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 0 8px; transition: color .2s, border-color .2s, background .2s, transform .1s;
+    }
+    .feed-card-del:hover { color: var(--accent-text); border-color: var(--accent-dim); background: var(--surface-3); }
+    .feed-card-del:active { transform: scale(.96); }
+    .feed-card-del[data-action="delete-feed"]:hover { color: var(--error); border-color: rgba(var(--error-rgb),.45); background: rgba(var(--error-rgb),.08); }
     .feed-card-del.favorited { color: var(--star); }
     .feed-card-del[data-action="favorite-feed"]:hover { color: var(--star); }
     .feed-entries {
@@ -393,27 +459,31 @@
     .feed-card.expanded .feed-entries::-webkit-scrollbar { display:none; }
     .entry-item {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 9px 6px; border-radius: var(--r-sm); gap: 10px;
+      padding: 8px 6px; border-radius: var(--control-radius); gap: 8px;
     }
     .entry-item:hover { background: var(--surface-2); }
     .entry-item.processed .entry-title { color: var(--text-dim); }
     .entry-title { font-size: 12.5px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .entry-actions { display: flex; gap: 5px; flex-shrink: 0; }
     .btn-sm {
-      background: var(--surface-3); border: 1px solid var(--border); color: var(--text-muted);
-      border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer;
-      transition: all .2s; white-space: nowrap;
+      min-height: var(--control-sm); background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted);
+      border-radius: var(--control-radius); padding: 0 9px; font-size: 12px; font-weight: 500; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      transition: color .2s, border-color .2s, background .2s, transform .1s, opacity .2s; white-space: nowrap; text-decoration: none; line-height: 1;
     }
-    .btn-sm:hover { border-color: var(--accent-dim); color: var(--accent-text); }
-    .btn-sm:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-sm:hover { border-color: var(--accent-dim); color: var(--accent-text); background: var(--surface-3); }
+    .btn-sm:active { transform: scale(.98); }
+    .btn-sm:disabled { opacity: .4; cursor: not-allowed; transform: none; }
     .btn-sm.primary { background: var(--accent); color: var(--text-on-accent); border-color: var(--accent); }
     .btn-sm.primary:hover { background: var(--accent-h); }
     .rss-empty { text-align: center; padding: 40px 20px; color: var(--text-dim); }
     .rss-empty .rss-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
     /* Summary history */
-    .history-toolbar { display: flex; gap: 10px; margin-bottom: 12px; }
-    .history-filter-row { display:flex; gap:7px; flex-wrap:wrap; margin:-2px 0 12px; }
-    .history-filter { background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); border-radius:999px; padding:5px 11px; font-size:12px; cursor:pointer; }
+    .history-toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
+    .history-filter-row { display:flex; gap:6px; flex-wrap:wrap; margin:-2px 0 10px; }
+    .history-filter { min-height:var(--control-sm); background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); border-radius:var(--control-radius); padding:0 9px; font-size:12px; font-weight:500; cursor:pointer; transition:color .2s, border-color .2s, background .2s, transform .1s; }
+    .history-filter:hover { color:var(--accent-text); border-color:var(--accent-dim); background:var(--surface-3); }
+    .history-filter:active { transform:scale(.98); }
     .history-filter.active { color:var(--accent-text); border-color:var(--accent-dim); background:rgba(var(--accent-rgb),.08); }
     .history-toolbar .btn-sm { flex-shrink: 0; }
     .history-search { flex: 1; }
@@ -430,7 +500,7 @@
     .history-item {
       cursor: pointer; user-select: none; flex-shrink: 0;
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
-      padding: 14px 16px; transition: border-color .2s;
+      padding: 12px 14px; transition: border-color .2s;
     }
     .history-item:hover { border-color: var(--accent-dim); }
     .history-item.open { border-color: var(--accent-dim); }
@@ -498,6 +568,7 @@
     /* Two-step setting */
     .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
     .setting-row + .setting-row { border-top: 1px solid var(--border); }
+    .setting-row.divider { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
     .setting-label { font-size: 13px; color: var(--text-muted); }
     .toggle-switch { position: relative; width: 40px; height: 22px; display: inline-block; flex-shrink: 0; }
     .toggle-switch input { opacity: 0; width: 0; height: 0; }
@@ -506,7 +577,6 @@
     input:checked + .toggle-slider { background: var(--accent); }
     input:checked + .toggle-slider:before { transform: translateX(18px); background: var(--text-on-accent); }
     @media (prefers-reduced-motion: reduce) {
-      .nav-logo-text { animation:none; color:var(--text); background:none; }
       .connecting-dots span, .spinner { animation:none; }
     }
     @media (max-width: 760px) {
@@ -535,28 +605,29 @@
 
 <nav class="navbar">
   <a class="nav-logo" href="/">
-    <img src="/static/icon128.svg" alt="logo">
+    <img class="logo-dark" src="/static/icon_dark.svg" alt="logo">
+    <img class="logo-light" src="/static/icon_light.svg" alt="logo">
     <span class="nav-logo-text">AI<em>Transcriber</em></span>
   </a>
 
   <div class="tab-nav" id="tabNav">
     <button class="tab-nav-btn active" data-page="transcribe">
-      <i class="fas fa-wave-square"></i> <span data-i18n="nav_transcribe">转录</span>
+      <span data-i18n="nav_transcribe">转录</span>
     </button>
     <button class="tab-nav-btn" data-page="download">
-      <i class="fas fa-circle-down"></i> <span data-i18n="nav_download">下载</span>
+      <span data-i18n="nav_download">下载</span>
     </button>
     <button class="tab-nav-btn" data-page="rss">
-      <i class="fas fa-rss"></i> RSS
+      RSS
     </button>
     <button class="tab-nav-btn" data-page="history">
-      <i class="fas fa-box-archive"></i> <span data-i18n="nav_history">历史</span>
+      <span data-i18n="nav_history">历史</span>
     </button>
   </div>
 
   <div class="nav-actions">
     <button id="themeToggle" class="icon-btn" title="Toggle theme" data-i18n-title="toggle_theme">
-      <i class="fas fa-sun" id="themeIcon"></i>
+      <i class="fas fa-sun" id="themeIcon" aria-hidden="true"></i>
     </button>
     <select id="uiLanguageSelect" class="icon-btn" aria-label="UI language" data-i18n-aria-label="ui_language">
       <option value="en">English</option>
@@ -589,7 +660,6 @@
             <input id="videoUrl" type="url" class="url-input" placeholder="粘贴视频链接..." data-i18n-placeholder="video_url_placeholder" required>
           </div>
           <button type="submit" id="submitBtn" class="btn-go">
-            <i class="fas fa-search"></i>
             <span data-i18n="start_transcription">Transcribe</span>
           </button>
         </div>
@@ -600,7 +670,7 @@
           <p class="upload-or" data-i18n="upload_or">上传文件</p>
           <p class="upload-formats" data-i18n="upload_formats">.mp3 · .mp4 · .wav · .m4a · .webm · .mkv · .ogg · .flac</p>
           <button type="button" class="btn-upload-pill" id="uploadPickBtn">
-            <i class="fas fa-upload"></i> <span data-i18n="upload_files_btn">Upload files</span>
+            <span data-i18n="upload_files_btn">Upload files</span>
           </button>
         </div>
         <input type="file" id="fileInput" accept=".txt,.mp3,.mp4,.m4a,.wav,.webm,.mkv,.ogg,.flac" hidden>
@@ -608,8 +678,13 @@
     </div>
 
     <div id="errorBanner" class="error-banner">
-      <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
+      <i class="fas fa-exclamation-circle banner-icon"></i>
       <span id="errorMsg"></span>
+    </div>
+
+    <div id="onboardingBanner" class="error-banner notice" style="display:none;">
+      <i class="fas fa-key banner-icon"></i>
+      <span data-i18n="onboarding_setup">首次使用？请在下方设置 API Key 以启用转录和摘要功能。</span>
     </div>
 
     <div class="settings-row">
@@ -632,14 +707,13 @@
       <div class="settings-inline-model">
         <label class="inline-lang-label" for="modelSelect" data-i18n="model_select">Model</label>
         <select id="modelSelect" class="s-select">
-          <option value="" data-i18n="model_default">服务器默认</option>
+          <option value="" disabled selected data-i18n="model_select_placeholder">请选择模型</option>
         </select>
       </div>
+      <span class="settings-status" id="modelStatus" style="display:none;" title="Whisper 模型状态"><span data-i18n="model_loading">模型加载中…</span></span>
+      <span class="settings-status" id="settingsStatus"><span data-i18n="not_configured">未配置</span></span>
       <button class="settings-toggle" id="settingsToggle">
-        <i class="fas fa-cog" style="font-size:10px;"></i>
         <span data-i18n="ai_settings">AI Settings</span>
-        <span class="settings-status" id="settingsStatus"><span data-i18n="not_configured">未配置</span></span>
-        <i class="fas fa-chevron-down arrow"></i>
       </button>
     </div>
 
@@ -655,7 +729,6 @@
             <div class="key-row">
               <input id="apiKeyInput" class="s-input" type="password" placeholder="sk-..." data-i18n-placeholder="api_key_placeholder" autocomplete="new-password">
               <button type="button" id="fetchModelsBtn" class="btn-fetch">
-                <i class="fas fa-sync-alt" id="fetchIcon"></i>
                 <span data-i18n="fetch_models">Fetch</span>
               </button>
             </div>
@@ -663,7 +736,7 @@
           </div>
         </div>
         <!-- Two-step toggle -->
-        <div class="setting-row" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+        <div class="setting-row divider">
           <span class="setting-label" data-i18n="two_step_summary">双步摘要</span>
           <label class="toggle-switch">
             <input type="checkbox" id="twoStepToggle" checked>
@@ -704,19 +777,19 @@
           <button class="tab-btn" data-tab="summary"><span data-i18n="intelligent_summary">AI Summary</span></button>
           <button class="tab-btn" data-tab="translation" id="translationTabBtn" style="display:none;"><span data-i18n="translation">Translation</span></button>
           <div class="tab-actions">
-            <button class="btn-dl" id="exportBtn"><i class="fas fa-download"></i> <span data-i18n="export_button">Export</span></button>
+            <button class="btn-dl" id="exportBtn"><span data-i18n="export_button">Export</span></button>
             <select class="export-fmt" id="exportFormat" style="display:none;">
               <option value="markdown" data-i18n="export_md">MD</option>
               <option value="txt" data-i18n="export_txt">TXT</option>
               <option value="docx" data-i18n="export_docx">DOCX</option>
               <option value="pdf" data-i18n="export_pdf">PDF</option>
             </select>
-            <button class="btn-dl" id="retryScript" title="重新生成" data-i18n-title="retry"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button>
-            <button class="btn-dl" id="retrySummary" title="重新生成" data-i18n-title="retry" style="display:none;"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button>
-            <button class="btn-dl" id="retryTranslation" title="重新生成" data-i18n-title="retry" style="display:none;"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button>
-            <button class="btn-dl" id="copyScript" title="复制转录文本" data-i18n-title="copy_transcript"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button>
-            <button class="btn-dl" id="copySummary" title="复制摘要" data-i18n-title="copy_summary" style="display:none;"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button>
-            <button class="btn-dl" id="copyTranslation" title="复制翻译" data-i18n-title="copy_translation" style="display:none;"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button>
+            <button class="btn-dl" id="retryScript" title="重新生成" data-i18n-title="retry"><span data-i18n="retry">Retry</span></button>
+            <button class="btn-dl" id="retrySummary" title="重新生成" data-i18n-title="retry" style="display:none;"><span data-i18n="retry">Retry</span></button>
+            <button class="btn-dl" id="retryTranslation" title="重新生成" data-i18n-title="retry" style="display:none;"><span data-i18n="retry">Retry</span></button>
+            <button class="btn-dl" id="copyScript" title="复制转录文本" data-i18n-title="copy_transcript"><span data-i18n="copy">Copy</span></button>
+            <button class="btn-dl" id="copySummary" title="复制摘要" data-i18n-title="copy_summary" style="display:none;"><span data-i18n="copy">Copy</span></button>
+            <button class="btn-dl" id="copyTranslation" title="复制翻译" data-i18n-title="copy_translation" style="display:none;"><span data-i18n="copy">Copy</span></button>
           </div>
         </div>
         <div id="scriptTab" class="tab-pane active">
@@ -729,9 +802,6 @@
           <div class="tab-pane-scroll"><div class="md-content" id="translationContent"></div></div>
         </div>
       </div>
-    </div>
-    <div class="footer">
-      <p data-i18n="footer_text"><a class="repo-primary" href="https://github.com/EvilIrving/ai-transcriber" target="_blank">ai-transcriber</a> · Inspired by <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank">AI-Video-Transcriber</a></p>
     </div>
   </div>
 
@@ -747,7 +817,7 @@
     </div>
 
     <div id="dwnErrorBanner" class="error-banner">
-      <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
+      <i class="fas fa-exclamation-circle banner-icon"></i>
       <span id="dwnErrorMsg"></span>
     </div>
 
@@ -757,42 +827,42 @@
         <input id="dwnUrl" type="url" class="url-input" placeholder="粘贴视频链接..." data-i18n-placeholder="video_url_placeholder">
       </div>
       <button id="dwnDetectBtn" class="btn-go">
-        <i class="fas fa-magnifying-glass"></i> <span data-i18n="detect">检测</span>
+        <span data-i18n="detect">检测</span>
       </button>
     </div>
 
     <div id="dwnFormats" style="display:none;">
-      <div class="dwn-tabs" style="display:flex;border-bottom:1px solid var(--border);margin-bottom:12px;">
-        <button class="dwn-tab-btn active" data-dwntab="video" style="background:none;border:none;border-bottom:2px solid var(--accent);color:var(--accent-text);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;"><i class="fas fa-film"></i> <span data-i18n="video">视频</span></button>
-        <button class="dwn-tab-btn" data-dwntab="audio" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;"><i class="fas fa-music"></i> <span data-i18n="audio">音频</span></button>
-        <button class="dwn-tab-btn" data-dwntab="subtitle" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;"><i class="fas fa-closed-captioning"></i> <span data-i18n="subtitle_file">字幕</span></button>
+      <div class="dwn-tabs">
+        <button class="dwn-tab-btn active" data-dwntab="video"><span data-i18n="video">视频</span></button>
+        <button class="dwn-tab-btn" data-dwntab="audio"><span data-i18n="audio">音频</span></button>
+        <button class="dwn-tab-btn" data-dwntab="subtitle"><span data-i18n="subtitle_file">字幕</span></button>
       </div>
       <!-- Video tab -->
       <div class="dwn-tab-pane active" id="dwnTabVideo">
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;" data-i18n="choose_quality">选择清晰度：</p>
+        <p class="dwn-field-note" data-i18n="choose_quality">选择清晰度：</p>
         <div class="fmt-list" id="dwnFmtList"></div>
-        <div style="margin-top:8px;">
-          <label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+        <div class="dwn-inline-field">
+          <label>
             <span data-i18n="output_format">输出格式：</span>
-            <select id="dwnVideoContainer" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;">
+            <select id="dwnVideoContainer">
               <option value="mp4">mp4</option>
               <option value="mkv">mkv</option>
               <option value="webm">webm</option>
             </select>
           </label>
         </div>
-        <button id="dwnStartVideoBtn" class="btn-go" style="width:100%;justify-content:center;margin-top:12px;">
-          <i class="fas fa-download"></i> <span data-i18n="download_video_btn">下载视频</span>
+        <button id="dwnStartVideoBtn" class="btn-go dwn-start-btn">
+          <span data-i18n="download_video_btn">下载视频</span>
         </button>
       </div>
       <!-- Audio tab -->
       <div class="dwn-tab-pane" id="dwnTabAudio" style="display:none;">
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;" data-i18n="choose_audio_quality">选择音质：</p>
+        <p class="dwn-field-note" data-i18n="choose_audio_quality">选择音质：</p>
         <div class="fmt-list" id="dwnAudioFmtList"></div>
-        <div style="margin-top:8px;">
-          <label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
+        <div class="dwn-inline-field">
+          <label>
             <span data-i18n="output_format">输出格式：</span>
-            <select id="dwnAudioContainer" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;">
+            <select id="dwnAudioContainer">
               <option value="m4a">m4a (AAC)</option>
               <option value="mp3">mp3</option>
               <option value="opus">opus</option>
@@ -801,19 +871,19 @@
             </select>
           </label>
         </div>
-        <button id="dwnStartAudioBtn" class="btn-go" style="width:100%;justify-content:center;margin-top:12px;">
-          <i class="fas fa-download"></i> <span data-i18n="download_audio_btn">下载音频</span>
+        <button id="dwnStartAudioBtn" class="btn-go dwn-start-btn">
+          <span data-i18n="download_audio_btn">下载音频</span>
         </button>
       </div>
       <!-- Subtitle tab -->
       <div class="dwn-tab-pane" id="dwnTabSubtitle" style="display:none;">
-        <div id="dwnSubInfo" style="font-size:13px;color:var(--text-muted);margin-bottom:10px;"></div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-          <label style="font-size:12px;color:var(--text-dim);" data-i18n="subtitle_language">字幕语言：</label>
-          <select id="dwnSubLang" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;flex:1;"></select>
+        <div id="dwnSubInfo" class="dwn-sub-info"></div>
+        <div class="dwn-subtitle-row">
+          <label data-i18n="subtitle_language">字幕语言：</label>
+          <select id="dwnSubLang"></select>
         </div>
-        <button id="dwnStartSubBtn" class="btn-go" style="width:100%;justify-content:center;">
-          <i class="fas fa-download"></i> <span data-i18n="download_subtitle_btn">下载字幕</span>
+        <button id="dwnStartSubBtn" class="btn-go dwn-start-btn">
+          <span data-i18n="download_subtitle_btn">下载字幕</span>
         </button>
       </div>
     </div>
@@ -831,15 +901,15 @@
       <div class="prog-msg" id="dwnProgressMsg" data-i18n="preparing">Preparing…</div>
     </div>
 
-    <div id="dwnCompleted" style="display:none;text-align:center;padding:30px;">
-      <p style="font-size:1.2rem;color:var(--success);margin-bottom:12px;"><i class="fas fa-circle-check"></i> <span data-i18n="completed">已完成</span></p>
-      <p id="dwnFileName" style="font-size:13px;color:var(--text-muted);margin-bottom:14px;"></p>
-      <a id="dwnFileLink" class="btn-go" href="#" style="display:inline-flex;text-decoration:none;">
-        <i class="fas fa-download"></i> <span data-i18n="download_file">Download File</span>
+    <div id="dwnCompleted" class="dwn-completed">
+      <p class="dwn-completed-title"><i class="fas fa-circle-check"></i> <span data-i18n="completed">已完成</span></p>
+      <p id="dwnFileName" class="dwn-completed-file"></p>
+      <a id="dwnFileLink" class="btn-go dwn-file-link" href="#">
+        <span data-i18n="download_file">Download File</span>
       </a>
     </div>
 
-    <p style="font-size:11px;color:var(--text-dim);margin-top:20px;"><i class="fas fa-circle-info"></i> <span data-i18n="copyright_notice">请遵守版权规定。</span></p>
+    <p class="inline-info"><i class="fas fa-circle-info"></i> <span data-i18n="copyright_notice">请遵守版权规定。</span></p>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
@@ -897,17 +967,17 @@
       </div>
       <div class="page-topbar-actions">
         <a class="btn-sm" href="/static/rss_feeds_template.json" download title="下载 JSON 模板" data-i18n-title="download_json_template">
-          <i class="fas fa-download"></i>
+          <span data-i18n="download_json_template">下载模板</span>
         </a>
         <button id="rssImportJsonBtn" class="btn-sm primary">
-          <i class="fas fa-file-import"></i> <span data-i18n="import_json_feeds">上传 JSON</span>
+          <span data-i18n="import_json_feeds">上传 JSON</span>
         </button>
         <input id="rssJsonFileInput" type="file" accept="application/json,.json" hidden>
       </div>
     </div>
 
     <div id="rssErrorBanner" class="error-banner">
-      <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
+      <i class="fas fa-exclamation-circle banner-icon"></i>
       <span id="rssErrorMsg"></span>
     </div>
 
@@ -917,7 +987,7 @@
         <input id="rssFeedUrl" type="url" class="url-input" placeholder="粘贴 RSS 链接..." data-i18n-placeholder="rss_url_placeholder">
       </div>
       <button id="rssAddBtn" class="btn-go">
-        <i class="fas fa-plus"></i> <span data-i18n="subscribe">订阅</span>
+        <span data-i18n="subscribe">订阅</span>
       </button>
     </div>
 
@@ -950,6 +1020,10 @@
   </div>
 
 </main>
+
+<footer class="footer">
+  <p data-i18n="footer_text">AI Transcriber · Inspired by AI-Video-Transcriber</p>
+</footer>
 
 <script src="/static/js/api.js?v=20260609-api-layer"></script>
 <script src="/static/js/i18n.js?v=20260609-interaction-opt"></script>

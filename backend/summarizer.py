@@ -17,11 +17,11 @@ class Summarizer:
         优先级：参数 > 环境变量。
         model 指定时会同时作为 fast_model 和 advanced_model 使用。
         """
-        effective_key = api_key or os.getenv("OPENAI_API_KEY")
-        effective_url = base_url or os.getenv("OPENAI_BASE_URL")
+        effective_key = api_key or None
+        effective_url = base_url or None
 
         if not effective_key:
-            logger.debug("未设置OPENAI_API_KEY环境变量，将无法使用摘要功能")
+            logger.debug("未提供 API Key，将无法使用摘要功能")
 
         if effective_key:
             kwargs = {"api_key": effective_key}
@@ -39,8 +39,8 @@ class Summarizer:
 
         # 模型选择优先级：构造函数参数 > 环境变量 > 默认值
         # FAST_MODEL 用于格式化/纠错，SMART_MODEL 用于摘要/翻译
-        self.fast_model = model or os.getenv("FAST_MODEL") or "gpt-3.5-turbo"
-        self.advanced_model = model or os.getenv("SMART_MODEL") or "gpt-4o"
+        self.fast_model = model or "gpt-3.5-turbo"
+        self.advanced_model = model or "gpt-4o"
         # LLM 总超时（兜底），可通过环境变量调整
         self._llm_timeout = float(os.getenv("LLM_TIMEOUT_SEC", "300"))
         

@@ -105,6 +105,10 @@ $FFMPEG_SRC = Join-Path $FFMPEG_DIR "ffmpeg.exe"
 if (Test-Path $APP_OUTPUT) {
     if (Test-Path $FFMPEG_SRC) {
         Copy-Item $FFMPEG_SRC $APP_OUTPUT -Force
+        $FFPROBE_SRC = Join-Path $FFMPEG_DIR "ffprobe.exe"
+        if (Test-Path $FFPROBE_SRC) {
+            Copy-Item $FFPROBE_SRC $APP_OUTPUT -Force
+        }
         Write-Host "   ✅ FFmpeg 已复制到 $APP_OUTPUT"
     }
     # 复制 .env 示例

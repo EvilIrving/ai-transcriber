@@ -11,7 +11,12 @@ import sys
 import time
 import signal
 import threading
+import multiprocessing
 from pathlib import Path
+
+# ── 关键：PyInstaller 冻结后必须最先调用，否则子进程会重新执行整个 app，
+#    造成无限自我启动（fork bomb）。务必在任何其他逻辑之前。 ──
+multiprocessing.freeze_support()
 
 # ── 项目根目录检测（支持普通运行和 PyInstaller 打包） ──
 if getattr(sys, "frozen", False):
@@ -21,6 +26,10 @@ else:
     APP_DIR = Path(__file__).parent
 
 BACKEND_DIR = APP_DIR / "backend"
+
+# ── 确保 backend/ 在 sys.path 中（开发模式 uvicorn "main:app" + 预加载都依赖此路径） ──
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 # ── 加载 .env 配置 ──
 def _load_dotenv_simple(dotenv_path: Path) -> None:
@@ -77,83 +86,160 @@ FFMPEG_PATH = _find_ffmpeg()
 if FFMPEG_PATH:
     os.environ["PATH"] = str(Path(FFMPEG_PATH).parent) + os.pathsep + os.environ.get("PATH", "")
 
+# ── SSL 证书：PyInstaller 打包后自带的 CA 证书可能过期/缺失，
+#    用 certifi 提供完整的 Mozilla CA bundle ──
+if getattr(sys, "frozen", False):
+    try:
+        import certifi
+        os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
+    except ImportError:
+        pass
+
 # ── 默认环境变量 ──
 os.environ.setdefault("HOST", "127.0.0.1")
 os.environ.setdefault("PORT", "8000")
 os.environ.setdefault("WHISPER_MODEL_SIZE", "base")
 os.environ.setdefault("UPLOAD_MAX_MB", "200")
-os.environ.setdefault("OPENAI_BASE_URL", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
 
 
 def _run_server():
     """在后台线程中运行 uvicorn 服务"""
-    import uvicorn
-    import logging
+    import traceback
+    try:
+        import uvicorn
+        import logging
 
-    logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.INFO)
 
-    host = os.getenv("HOST", "127.0.0.1")
-    port = int(os.getenv("PORT", "8000"))
+        host = os.getenv("HOST", "127.0.0.1")
+        port = int(os.getenv("PORT", "8000"))
 
-    # 开发模式：切换到 backend/ 目录确保 flat import 正常
-    # 打包模式：PyInstaller 已处理模块导入，无需切换目录
-    if BACKEND_DIR.exists():
-        os.chdir(str(BACKEND_DIR))
-
-    config = uvicorn.Config(
-        "main:app",
-        host=host,
-        port=port,
-        log_level="info",
-        # 桌面应用不需要热重载
-    )
-    server = uvicorn.Server(config)
-    server.run()
+        config = uvicorn.Config(
+            "main:app",
+            host=host,
+            port=port,
+            log_level="info",
+        )
+        server = uvicorn.Server(config)
+        server.run()
+    except Exception:
+        traceback.print_exc()
+        try:
+            with open(APP_DIR / "server_error.log", "w") as f:
+                traceback.print_exc(file=f)
+        except Exception:
+            pass
 
 
 def main():
     # 解析命令行参数
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "8000"))
+    no_window = "--no-window" in sys.argv or "--server" in sys.argv
 
+    url = f"http://{host}:{port}"
     print(f"🚀 AI视频转录器")
-    print(f"   本地服务: http://{host}:{port}")
+    print(f"   本地服务: {url}")
     if FFMPEG_PATH:
         print(f"   FFmpeg:   {FFMPEG_PATH}")
     else:
         print(f"   ⚠️  FFmpeg 未找到，部分功能可能不可用")
     print("=" * 50)
 
+    # 提前触发重型依赖导入（faster-whisper / ctranslate2 等），避免阻塞 uvicorn 启动
+    print("📦 预加载依赖...")
+    t0 = time.time()
+    try:
+        from services import transcriber as _preload_t
+        print(f"   ✅ 依赖加载完成 ({time.time()-t0:.1f}s)")
+    except Exception as e:
+        print(f"   ⚠️  依赖预加载失败: {e}")
+
     # 启动后端服务线程
     server_thread = threading.Thread(target=_run_server, daemon=True)
     server_thread.start()
 
-    # 等待服务就绪
-    url = f"http://{host}:{port}"
-    print(f"⏳ 等待服务启动...")
-    for _ in range(30):
+    # ── 无窗口模式（--no-window / --server）：仅启动服务，打开浏览器 ──
+    if no_window:
+        import webbrowser
+        print(f"🌐 服务模式，打开浏览器: {url}")
+        webbrowser.open(url)
+        print("按 Ctrl+C 停止服务")
         try:
-            import urllib.request
-            urllib.request.urlopen(url, timeout=0.5)
-            break
-        except Exception:
-            time.sleep(0.3)
-    else:
-        print("⚠️  服务可能启动较慢，窗口即将打开...")
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+        print("👋 应用已关闭")
+        return
 
     print(f"🪟 启动桌面窗口...")
 
     try:
         import webview
 
+        loading_html = f"""
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><style>
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{
+    background: #0d0b09;
+    color: #ddd5cb;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    height: 100vh; flex-direction: column; gap: 20px;
+  }}
+  .logo svg {{ width: 72px; height: 72px; }}
+  .title {{ font-size: 18px; font-weight: 650; }}
+  .title em {{ color: #c07830; font-style: normal; }}
+  .status {{ font-size: 13px; color: #8c7e70; }}
+  .dots {{ display: flex; gap: 5px; }}
+  .dots span {{ width: 5px; height: 5px; border-radius: 50%; background: #c07830; animation: pulse 1s ease-in-out infinite; }}
+  .dots span:nth-child(2) {{ animation-delay: .15s; }}
+  .dots span:nth-child(3) {{ animation-delay: .3s; }}
+  @keyframes pulse {{ 0%,100% {{ opacity: .3; transform: translateY(0); }} 45% {{ opacity: 1; transform: translateY(-4px); }} }}
+</style></head>
+<body>
+  <div class="logo">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="AI Transcribe">
+      <rect width="1024" height="1024" fill="#0d0b09"/>
+      <path d="M 112,386 L 232,386 L 264,354 L 296,386 L 376,226 L 432,546 L 488,386 L 572,354 L 614,386 L 912,386"
+            fill="none" stroke="#d08840" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="112" y="606" width="800" height="48" rx="24" fill="#d08840"/>
+      <rect x="112" y="678" width="576" height="48" rx="24" fill="#d08840"/>
+      <rect x="112" y="750" width="360" height="48" rx="24" fill="#d08840"/>
+    </svg>
+  </div>
+  <div class="title">AI<em>Transcriber</em></div>
+  <div class="dots"><span></span><span></span><span></span></div>
+  <div class="status" id="status">正在启动服务…</div>
+  <script>
+    var appUrl = "{url}";
+    var attempts = 0;
+    function check() {{
+      attempts++;
+      fetch(appUrl, {{ mode: 'no-cors' }})
+        .then(function() {{ window.location.href = appUrl; }})
+        .catch(function() {{
+          if (attempts > 15) document.getElementById('status').textContent = '首次启动需下载模型，请耐心等候…';
+          if (attempts < 600) setTimeout(check, 500);
+        }});
+    }}
+    check();
+  </script>
+</body>
+</html>"""
+
         webview.create_window(
             title="AI视频转录器",
-            url=url,
+            html=loading_html,
             width=1200,
             height=800,
             min_size=(800, 600),
             text_select=True,
-            confirm_close=False,
+            confirm_close=True,
         )
         webview.start(debug=False)
 

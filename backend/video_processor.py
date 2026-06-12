@@ -29,12 +29,11 @@ class VideoProcessor:
             'prefer_ffmpeg': True,
             'quiet': True,
             'no_warnings': True,
-            'noplaylist': True,  # 强制只下载单个媒体，不下载播放列表
-            # socket_timeout 让底层 socket 读取停滞时抛错。这是唯一能让
-            # to_thread 中的下载线程真正退出的机制——wall-clock 的 wait_for
-            # 只能放弃等待，无法终止线程。
+            'noplaylist': True,
             'socket_timeout': 30,
-            'remote_components': ['ejs:github'],  # 启用 JS 挑战求解器以绕过 YouTube 反爬
+            'nocheckcertificate': True,
+            'retries': 3,
+            'remote_components': ['ejs:github'],
         }
         # cookies 配置独立存储，供所有 yt-dlp 调用复用
         self._cookies_opts: dict = {}
@@ -46,9 +45,10 @@ class VideoProcessor:
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
-            'socket_timeout': 10,        # 默认 20s 太慢
-            'extractor_retries': 1,       # 减少重试延迟
-            'retries': 1,
+            'socket_timeout': 10,
+            'extractor_retries': 1,
+            'retries': 3,
+            'nocheckcertificate': True,
             **self._cookies_opts,
         }
         if extra:
@@ -96,11 +96,9 @@ class VideoProcessor:
             logger.info(f"使用浏览器 cookies: {browser}")
             return
 
-        # 3) 自动检测浏览器 cookies 默认关闭。
-        # 读取浏览器 cookies 在 macOS 上经常会触发钥匙串/数据库访问，
-        # Detect 阶段可能因此比命令行裸跑 yt-dlp 慢十几秒。
-        auto_detect = os.getenv("AUTO_DETECT_BROWSER_COOKIES", "").strip().lower()
-        if auto_detect in {"1", "true", "yes", "on"}:
+        # 3) 自动检测浏览器 cookies，默认开启以绕过 YouTube 反爬验证
+        auto_detect = os.getenv("AUTO_DETECT_BROWSER_COOKIES", "1").strip().lower()
+        if auto_detect not in {"0", "false", "no", "off"}:
             detected = self._detect_browser_cookies()
             if detected:
                 self._cookies_opts['cookiesfrombrowser'] = (detected,)
@@ -520,7 +518,7 @@ class VideoProcessor:
     def get_video_info(self, url: str) -> dict:
         """获取媒体信息"""
         try:
-            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            with yt_dlp.YoutubeDL(self._get_base_opts()) as ydl:
                 info = ydl.extract_info(url, download=False)
                 return {
                     'title': info.get('title', ''),
