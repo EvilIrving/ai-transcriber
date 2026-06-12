@@ -8,6 +8,7 @@
 """
 import logging
 import threading
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,8 +17,17 @@ from fastapi.staticfiles import StaticFiles
 from task_store import PROJECT_ROOT
 from routers import core, downloads, export, rss, transcribe
 
-# 配置日志
-logging.basicConfig(level=logging.INFO)
+# 配置日志：同时输出到终端与文件，便于在 pnpm dev 混合输出下事后排查。
+# 文件固定为 backend/dev.log（覆盖式），traceback 等都会落在这里。
+_LOG_FILE = Path(__file__).parent / "dev.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(_LOG_FILE, mode="w", encoding="utf-8"),
+    ],
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Transcriber", version="1.0.0")

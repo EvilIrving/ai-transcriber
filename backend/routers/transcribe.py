@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
+from exceptions import TranscriberError
 from summarizer import Summarizer
 from services import UPLOAD_ALLOWED_EXT, UPLOAD_MAX_MB, summarizer as default_summarizer
 from pipeline import (
@@ -177,6 +178,9 @@ async def process_video(
 
     except HTTPException:
         raise
+    except TranscriberError as e:
+        logger.error(f"处理任务时出错: {e}")
+        raise HTTPException(status_code=e.http_status, detail=str(e))
     except Exception as e:
         logger.error(f"处理任务时出错: {str(e)}")
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")

@@ -11,9 +11,37 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
+class _YDLPLogger:
+    """把 yt-dlp 的输出全部接到 Python logging，避免它直接写进程的 stdout/stderr。
+
+    根因：在 ``uvicorn --reload`` / ``pnpm dev`` 下，worker 的 stdout 是连到 reloader
+    的**管道**而非终端。yt-dlp 默认会往 stdout 打进度条/信息；两个下载并发时把管道写满，
+    某次写入失败就抛 ``[Errno 32] Broken pipe``，导致"第二个任务"下载失败。
+    指定 logger（再配合 noprogress/no_color）后，yt-dlp 不再触碰原始管道，问题消除。
+    """
+
+    def debug(self, msg):
+        # yt-dlp 把 info 也走 debug；带 "[debug] " 前缀的才是真 debug，丢弃以免刷屏。
+        if not (isinstance(msg, str) and msg.startswith("[debug] ")):
+            logger.debug("yt-dlp: %s", msg)
+
+    def info(self, msg):
+        logger.debug("yt-dlp: %s", msg)
+
+    def warning(self, msg):
+        logger.warning("yt-dlp: %s", msg)
+
+    def error(self, msg):
+        logger.error("yt-dlp: %s", msg)
+
+
+_YDLP_LOGGER = _YDLPLogger()
+
+
 class VideoProcessor:
     """媒体处理器，使用yt-dlp下载和转换媒体"""
-    
+
     def __init__(self):
         self.ydl_opts = {
             'format': 'bestaudio/best',  # 优先下载最佳音频源
@@ -33,7 +61,6 @@ class VideoProcessor:
             'socket_timeout': 30,
             'nocheckcertificate': True,
             'retries': 3,
-            'remote_components': ['ejs:github'],
         }
         # cookies 配置独立存储，供所有 yt-dlp 调用复用
         self._cookies_opts: dict = {}
@@ -49,6 +76,12 @@ class VideoProcessor:
             'extractor_retries': 1,
             'retries': 3,
             'nocheckcertificate': True,
+            # 关键：把输出接到 Python logging，并彻底关掉进度条/颜色，
+            # 避免 yt-dlp 写进程 stdout 管道导致并发下载时 Broken pipe。
+            'logger': _YDLP_LOGGER,
+            'noprogress': True,
+            'no_color': True,
+            'consoletitle': False,
             **self._cookies_opts,
         }
         if extra:
@@ -58,6 +91,19 @@ class VideoProcessor:
     @staticmethod
     def _is_bilibili_url(url: str) -> bool:
         return bool(re.search(r"(^|://)(www\.)?bilibili\.com/|(^|://)b23\.tv/", url or "", re.I))
+
+    @staticmethod
+    def _is_youtube_url(url: str) -> bool:
+        return bool(re.search(r"(^|://|\.)(youtube\.com|youtu\.be)/", url or "", re.I))
+
+    def _youtube_js_opts(self, url: str) -> dict:
+        """YouTube 专用：启用 EJS 远程组件解 nsig 签名。
+
+        该组件需从 GitHub 拉取，对网络受限（如国内访问 GitHub 不稳）的用户可能
+        在下载途中触发 BrokenPipe。它仅对 YouTube 有意义，故非 YouTube 链接一律
+        不启用，避免无谓地引入 GitHub 依赖与失败面（如 B站 下载时的 broken pipe）。
+        """
+        return {"remote_components": ["ejs:github"]} if self._is_youtube_url(url) else {}
 
     def _get_download_opts(self, url: str, extra: dict = None) -> dict:
         """返回实际下载使用的 yt-dlp 选项；慢速站点可在这里放宽网络容忍度。"""
@@ -477,7 +523,8 @@ class VideoProcessor:
                 }],
                 'postprocessor_args': ['-ac', '1', '-ar', '16000', '-movflags', '+faststart'],
                 'prefer_ffmpeg': True,
-                'remote_components': ['ejs:github'],
+                # 仅 YouTube 需要 EJS 远程组件；非 YouTube（如 B站）不引入 GitHub 依赖
+                **self._youtube_js_opts(url),
             })
             
             logger.info(f"开始下载: {url}")
@@ -546,9 +593,9 @@ class VideoProcessor:
             return audio_file, video_title
             
         except Exception as e:
-            logger.error(f"下载失败: {str(e)}")
+            logger.error(f"下载失败: {str(e)}", exc_info=True)
             raise Exception(f"下载失败: {str(e)}")
-    
+
     def get_video_info(self, url: str) -> dict:
         """获取媒体信息"""
         try:
@@ -803,7 +850,7 @@ class VideoProcessor:
             raise Exception("下载完成但未找到输出文件")
 
         except Exception as e:
-            logger.error(f"下载失败: {e}")
+            logger.error(f"下载失败: {e}", exc_info=True)
             raise Exception(f"下载失败: {str(e)}")
 
     async def download_audio_only(
@@ -849,7 +896,7 @@ class VideoProcessor:
             raise Exception("下载完成但未找到音频文件")
 
         except Exception as e:
-            logger.error(f"下载音频失败: {e}")
+            logger.error(f"下载音频失败: {e}", exc_info=True)
             raise Exception(f"下载音频失败: {str(e)}")
 
     async def download_subtitles_file(

@@ -80,6 +80,20 @@ active_tasks = {}
 sse_connections = {}
 
 
+def update_task(task_id: str, **fields) -> bool:
+    """安全更新任务字段：任务已被删除/取消时静默跳过，不抛 KeyError。
+
+    后台任务与 delete_task 可能并发——任务在处理途中被取消删除后，
+    旧的 ``tasks[task_id].update(...)`` 会 KeyError 并击穿 except 处理。
+    所有"可能在任务已消失时仍执行"的更新都应走这里。
+    """
+    task = tasks.get(task_id)
+    if task is None:
+        return False
+    task.update(fields)
+    return True
+
+
 def finish_task(task_id: str, dedup_url: Optional[str] = None):
     """任务结束（成功或失败）时统一清理活跃任务句柄与去重 URL。"""
     active_tasks.pop(task_id, None)

@@ -1,9 +1,30 @@
 import os
+import re
 from faster_whisper import WhisperModel
 import logging
 from typing import Optional
 
+from exceptions import TranscriptionError
+
 logger = logging.getLogger(__name__)
+
+
+def parse_detected_language(transcript_text: Optional[str]) -> Optional[str]:
+    """从转录 Markdown 的 ``**Detected Language:**`` 行解析语言代码。
+
+    纯函数，不依赖任何共享状态，可安全地在并发任务中调用。
+    解析不出有效语言代码时返回 None。
+    """
+    if not transcript_text or "**Detected Language:**" not in transcript_text:
+        return None
+    for line in transcript_text.split("\n"):
+        if "**Detected Language:**" in line:
+            raw = line.split(":", 1)[-1].strip()
+            lang = re.sub(r"\*+", "", raw).strip()
+            if lang and len(lang) >= 2 and not lang.startswith("-"):
+                return lang
+            return None
+    return None
 
 class Transcriber:
     """音频转录器，使用Faster-Whisper进行语音转文字"""
@@ -17,8 +38,7 @@ class Transcriber:
         """
         self.model_size = model_size
         self.model = None
-        self.last_detected_language = None
-        
+
     def _load_model(self):
         """延迟加载模型"""
         if self.model is None:
@@ -34,7 +54,7 @@ class Transcriber:
                     logger.info("模型加载完成（CPU 备选）")
                 except Exception as cpu_e:
                     logger.error(f"模型加载失败: {cpu_e}")
-                    raise Exception(f"模型加载失败: {cpu_e}")
+                    raise TranscriptionError(f"模型加载失败: {cpu_e}")
     
     async def transcribe(self, audio_path: str, language: Optional[str] = None) -> str:
         """
@@ -50,7 +70,7 @@ class Transcriber:
         try:
             # 检查文件是否存在
             if not os.path.exists(audio_path):
-                raise Exception(f"音频文件不存在: {audio_path}")
+                raise TranscriptionError(f"音频文件不存在: {audio_path}")
             
             # 加载模型
             self._load_model()
@@ -81,7 +101,6 @@ class Transcriber:
             segments, info = await asyncio.to_thread(_do_transcribe)
             
             detected_language = info.language
-            self.last_detected_language = detected_language  # 保存检测到的语言
             logger.info(f"检测到的语言: {detected_language}")
             logger.info(f"语言检测概率: {info.language_probability:.2f}")
             
@@ -111,9 +130,11 @@ class Transcriber:
             
             return transcript_text
             
+        except TranscriptionError:
+            raise
         except Exception as e:
             logger.error(f"转录失败: {str(e)}")
-            raise Exception(f"转录失败: {str(e)}")
+            raise TranscriptionError(f"转录失败: {str(e)}")
     
     def _format_time(self, seconds: float) -> str:
         """
@@ -144,31 +165,5 @@ class Transcriber:
         ]
     
     def get_detected_language(self, transcript_text: Optional[str] = None) -> Optional[str]:
-        """
-        获取检测到的语言
-        
-        Args:
-            transcript_text: 转录文本（可选，用于从文本中提取语言信息）
-            
-        Returns:
-            检测到的语言代码
-        """
-        # 如果有保存的语言，直接返回
-        if self.last_detected_language:
-            return self.last_detected_language
-        
-        # 如果提供了转录文本，尝试从中提取语言信息
-        if transcript_text and "**Detected Language:**" in transcript_text:
-            lines = transcript_text.split('\n')
-            for line in lines:
-                if "**Detected Language:**" in line:
-                    # 提取冒号后的内容，并移除 Markdown 加粗标记
-                    import re
-                    raw = line.split(":", 1)[-1].strip()
-                    lang = re.sub(r'\*+', '', raw).strip()
-                    # 如果提取出的值不是有效语言代码（如空字符串或只有符号），返回 None
-                    if lang and len(lang) >= 2 and not lang.startswith('-'):
-                        return lang
-                    return None
-        
-        return None
+        """从转录文本中解析检测到的语言（无共享状态，委托给纯函数）。"""
+        return parse_detected_language(transcript_text)
