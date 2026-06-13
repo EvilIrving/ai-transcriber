@@ -30,6 +30,9 @@ if (-not (Test-Path $VENV_PYTHON)) {
 Write-Host ""
 Write-Host "📦 步骤 1/4: 安装打包依赖..."
 & $VENV_PYTHON -m pip install -q pyinstaller pywebview
+# 始终把 yt-dlp 升到最新 stable 再打包；运行时 yt_dlp_updater 做周度自更新兜底。
+Write-Host "   升级 yt-dlp 到最新 stable..."
+& $VENV_PYTHON -m pip install -q --upgrade yt-dlp
 
 # ── 2. 下载 FFmpeg ──
 $FFMPEG_DIR = Join-Path $ROOT "ffmpeg_bin"
