@@ -43,6 +43,83 @@ class _YDLPLogger:
 _YDLP_LOGGER = _YDLPLogger()
 
 
+# ── FFmpeg / FFprobe 绝对路径解析 ──────────────────────────────────────
+# start.py 在启动时把内置二进制的绝对路径写入 AIT_FFMPEG / AIT_FFPROBE /
+# AIT_FFMPEG_LOCATION（打包场景）。开发模式未设置时回退到系统 PATH。
+# 显式用绝对路径，避免打包后（尤其 Windows）依赖 PATH 查找而 FileNotFoundError。
+def _resolve_tool(env_key: str, name: str) -> str:
+    p = os.environ.get(env_key)
+    if p and Path(p).exists():
+        return p
+    return shutil.which(name) or name
+
+
+FFMPEG_BIN = _resolve_tool("AIT_FFMPEG", "ffmpeg")
+FFPROBE_BIN = _resolve_tool("AIT_FFPROBE", "ffprobe")
+
+
+def _ffmpeg_location() -> str:
+    """传给 yt-dlp 的 ffmpeg_location（目录或可执行文件路径均可）。无法确定时返回空。"""
+    loc = os.environ.get("AIT_FFMPEG_LOCATION")
+    if loc and Path(loc).exists():
+        return loc
+    if os.path.sep in FFMPEG_BIN and Path(FFMPEG_BIN).exists():
+        return str(Path(FFMPEG_BIN).parent)
+    return ""
+
+
+def _subprocess_env() -> dict:
+    """spawn 外部 ffmpeg/ffprobe 时清理 PyInstaller 注入的库路径。
+
+    冻结环境会设置 DYLD_/LD_LIBRARY_PATH 指向 bundle 内的库，若让自带的静态
+    ffmpeg 继承，可能加载到不兼容的 .dylib/.so。PyInstaller 官方建议：spawn
+    系统/自带程序前，从 *_ORIG 还原原值，没有则删除该变量。
+    """
+    env = os.environ.copy()
+    for var in ("DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"):
+        orig = env.get(var + "_ORIG")
+        if orig is not None:
+            env[var] = orig
+        else:
+            env.pop(var, None)
+    return env
+
+
+def _run_media_proc(cmd: list[str], timeout: Optional[float] = None, label: str = "ffmpeg") -> str:
+    """同步执行 ffmpeg/ffprobe（供 asyncio.to_thread 调用）。
+
+    进程组 + 取消令牌登记（用户取消时 killpg 整组回收）+ 清理库路径 + 超时兜底。
+    成功返回 stdout 文本；失败/超时/被取消时抛异常。
+    """
+    token = cancellation.current()
+    popen_kwargs = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "env": _subprocess_env(),
+    }
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+    if token is not None:
+        token.register_process(proc)
+    try:
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise Exception(f"{label}超时（超过 {int(timeout or 0)} 秒）")
+    finally:
+        if token is not None:
+            token.unregister_process(proc)
+    if token is not None and token.is_cancelled():
+        raise CancelledByUser()
+    if proc.returncode != 0:
+        raise Exception(f"{label}失败: {(stderr or '').strip()[:800]}")
+    return stdout
+
+
 class VideoProcessor:
     """媒体处理器，使用yt-dlp下载和转换媒体"""
 
@@ -92,6 +169,11 @@ class VideoProcessor:
             'consoletitle': False,
             **self._cookies_opts,
         }
+        # 显式指定 ffmpeg 位置：后处理（提取音频/合流/重封装）不再依赖 PATH，
+        # 避免打包分发后找不到 ffmpeg 而后处理失败。
+        ffmpeg_loc = _ffmpeg_location()
+        if ffmpeg_loc:
+            base['ffmpeg_location'] = ffmpeg_loc
         if extra:
             base.update(extra)
         return base
@@ -291,33 +373,14 @@ class VideoProcessor:
         out_path = output_dir / f"upload_norm_{unique_id}.m4a"
 
         cmd = [
-            "ffmpeg", "-y", "-nostdin", "-i", str(input_path.resolve()),
+            FFMPEG_BIN, "-y", "-nostdin", "-i", str(input_path.resolve()),
             "-vn", "-ac", "1", "-ar", "16000",
             "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
             str(out_path.resolve()),
         ]
 
-        token = cancellation.current()
-
         def _run():
-            # 用 Popen + start_new_session 让 ffmpeg 成为进程组组长，登记到取消令牌；
-            # 用户取消时 killpg 整组回收。subprocess.run 起的进程拿不到句柄、杀不掉。
-            popen_kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True}
-            if os.name == "posix":
-                popen_kwargs["start_new_session"] = True
-            proc = subprocess.Popen(cmd, **popen_kwargs)
-            if token is not None:
-                token.register_process(proc)
-            try:
-                _, stderr = proc.communicate()
-            finally:
-                if token is not None:
-                    token.unregister_process(proc)
-            if token is not None and token.is_cancelled():
-                raise CancelledByUser()
-            if proc.returncode != 0:
-                err = (stderr or "").strip()
-                raise Exception(f"FFmpeg 转换失败: {err[:800]}")
+            _run_media_proc(cmd, label="FFmpeg 转换")
             if not out_path.exists():
                 raise Exception("FFmpeg 未生成输出文件")
 
@@ -655,17 +718,23 @@ class VideoProcessor:
                 else:
                     raise Exception("未找到下载的音频文件")
             
-            # 校验时长，如果和源文件差异较大，尝试一次ffmpeg规范化重封装
+            # 校验时长，如果和源文件差异较大，尝试一次ffmpeg规范化重封装。
+            # 用绝对路径的 ffprobe/ffmpeg + 进程组（可取消）+ 无 shell，修掉两个隐患：
+            #  · 打包后若无 ffprobe，旧实现会静默吞异常令校验失效，损坏/截断音频被
+            #    直送 Whisper（现已随包内置 ffprobe，探测失败也会显式告警）；
+            #  · shell=True 的跨平台/引号问题，且子进程无法被取消令牌回收。
+            def _probe_duration(path: str) -> float:
+                out = _run_media_proc(
+                    [FFPROBE_BIN, "-v", "error", "-show_entries", "format=duration",
+                     "-of", "default=noprint_wrappers=1:nokey=1", path],
+                    timeout=60, label="ffprobe 探测时长",
+                ).strip()
+                return float(out) if out else 0.0
+
             try:
-                import subprocess, shlex
-
-                def _probe_duration(path: str) -> float:
-                    probe_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {shlex.quote(path)}"
-                    out = subprocess.check_output(probe_cmd, shell=True).decode().strip()
-                    return float(out) if out else 0.0
-
                 actual_duration = await asyncio.to_thread(_probe_duration, audio_file)
-            except Exception as _:
+            except Exception as _e:
+                logger.warning(f"ffprobe 时长探测失败（跳过时长校验）: {_e}")
                 actual_duration = 0.0
 
             if expected_duration and actual_duration and abs(actual_duration - expected_duration) / expected_duration > 0.1:
@@ -676,8 +745,11 @@ class VideoProcessor:
                     fixed_path = str(output_dir / f"audio_{unique_id}_fixed.m4a")
 
                     def _fix_and_probe() -> float:
-                        fix_cmd = f"ffmpeg -y -i {shlex.quote(audio_file)} -vn -c:a aac -b:a 160k -movflags +faststart {shlex.quote(fixed_path)}"
-                        subprocess.check_call(fix_cmd, shell=True)
+                        _run_media_proc(
+                            [FFMPEG_BIN, "-y", "-nostdin", "-i", audio_file, "-vn",
+                             "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", fixed_path],
+                            timeout=600, label="ffmpeg 重封装",
+                        )
                         return _probe_duration(fixed_path)
 
                     actual_duration2 = await asyncio.to_thread(_fix_and_probe)
