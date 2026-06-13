@@ -98,7 +98,10 @@ async def enqueue_rss_task(
         if item_type == "rss_download" and not entry.get("enclosure_url"):
             raise HTTPException(status_code=400, detail="该条目没有可下载的媒体")
 
+        # 队列处理器要求 payload 携带 task_id（用于建任务记录、绑定取消令牌、SSE 恢复）。
+        task_id = str(uuid.uuid4())
         payload = {
+            "task_id": task_id,
             "feed_id": feed_id,
             "entry_id": entry_id,
             "entry_data": entry,
@@ -109,7 +112,7 @@ async def enqueue_rss_task(
         }
 
         result = await queue_manager.enqueue("tasks", item_type, item_key, payload)
-        return result
+        return {**result, "task_id": task_id}
 
     except HTTPException:
         raise

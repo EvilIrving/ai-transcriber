@@ -11,7 +11,7 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex items-center border-b border-[var(--border-color)]",
+      "inline-flex items-center",
       className
     )}
     {...props}
