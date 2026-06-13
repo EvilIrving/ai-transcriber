@@ -66,7 +66,7 @@ export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry }
         onValueChange={(v) => onTab(v as ResultTab)}
         className="w-full"
       >
-        <div className="flex items-center border-b border-[var(--border-color)] px-4 pt-3 gap-2 flex-wrap">
+        <div className="flex items-center px-4 pt-3 gap-2 flex-wrap">
           <TabsList className="border-b-0">
             {tabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value}>

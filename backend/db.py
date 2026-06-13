@@ -526,6 +526,9 @@ async def queue_get_state(queue_name: str) -> dict:
                     d["result"] = json.loads(d.get("result", "{}"))
                 except (json.JSONDecodeError, TypeError):
                     d["result"] = {}
+                payload_task_id = d["payload"].get("task_id") if isinstance(d.get("payload"), dict) else ""
+                if payload_task_id:
+                    d["task_id"] = payload_task_id
                 if d["status"] == "processing":
                     processing = d
                 items.append(d)

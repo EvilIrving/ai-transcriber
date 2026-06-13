@@ -147,6 +147,25 @@ def cancel(task_id: str) -> bool:
     return True
 
 
+def cancel_all() -> int:
+    """应用退出时调用：取消所有在册 token，杀掉它们登记的全部子进程
+    (ffmpeg 进程组等)。返回被取消的 token 数。
+
+    桌面应用退出 / 开发模式 Ctrl+C 时，进程内的 Whisper 工作线程会随主进程
+    一起消亡，但用 ``start_new_session`` 起的 ffmpeg 在独立进程组里，不会随
+    父进程退出而终止，必须显式 killpg 回收，否则成为孤儿进程在后台空跑。
+    """
+    tokens = list(_registry.values())
+    for token in tokens:
+        try:
+            token.cancel()
+        except Exception as e:  # noqa: BLE001 — 退出清理尽力而为
+            logger.warning("cancel_all 取消 token 失败 %s: %s", token.task_id, e)
+    if tokens:
+        logger.info("已取消 %d 个进行中的任务并回收其子进程", len(tokens))
+    return len(tokens)
+
+
 def current() -> "CancelToken | None":
     """深层代码读取当前 task 的 token(可能为 None)。"""
     return _current.get()

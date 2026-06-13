@@ -71,6 +71,10 @@ export function HistoryPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [confirmSelected, setConfirmSelected] = useState(false)
+  // 详情页摘要/转录稿切换。转录稿全文不在列表里，点开按需拉取并缓存。
+  const [detailTab, setDetailTab] = useState<"summary" | "transcript">("summary")
+  const [transcripts, setTranscripts] = useState<Record<string, string>>({})
+  const [transcriptLoading, setTranscriptLoading] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -130,6 +134,27 @@ export function HistoryPage() {
 
   const effectiveActive = visible.some((i) => i.task_id === activeId) ? activeId : visible[0]?.task_id || ""
   const activeItem = visible.find((i) => i.task_id === effectiveActive)
+
+  // 切换详情项时回到摘要标签。
+  useEffect(() => { setDetailTab("summary") }, [effectiveActive])
+
+  const loadTranscript = useCallback(async (taskId: string) => {
+    if (transcripts[taskId] !== undefined) return // 已缓存
+    setTranscriptLoading(true)
+    try {
+      const r = await api.taskTranscript(taskId)
+      setTranscripts((p) => ({ ...p, [taskId]: r.script || "" }))
+    } catch {
+      setTranscripts((p) => ({ ...p, [taskId]: "" }))
+    } finally {
+      setTranscriptLoading(false)
+    }
+  }, [transcripts])
+
+  // 切到转录稿标签时按需拉取全文。
+  useEffect(() => {
+    if (detailTab === "transcript" && effectiveActive) void loadTranscript(effectiveActive)
+  }, [detailTab, effectiveActive, loadTranscript])
 
   const removeOne = async (id: string) => {
     try {
@@ -336,7 +361,33 @@ export function HistoryPage() {
                   </span>
                 </div>
               </div>
-              <Markdown source={activeItem.summary || ""} />
+              {activeItem.has_transcript && (
+                <div className="history-filter-row" style={{ marginBottom: 8 }}>
+                  <Button
+                    variant={detailTab === "summary" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setDetailTab("summary")}
+                  >
+                    {t("intelligent_summary")}
+                  </Button>
+                  <Button
+                    variant={detailTab === "transcript" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setDetailTab("transcript")}
+                  >
+                    {t("transcript_text")}
+                  </Button>
+                </div>
+              )}
+              {detailTab === "transcript" ? (
+                transcriptLoading && transcripts[effectiveActive] === undefined ? (
+                  <p className="muted-note">{t("preparing")}</p>
+                ) : (
+                  <Markdown source={transcripts[effectiveActive] || ""} />
+                )
+              ) : (
+                <Markdown source={activeItem.summary || ""} />
+              )}
             </ScrollArea>
           ) : (
             <div className="detail-empty">

@@ -11,7 +11,7 @@ import { useI18n } from "@/i18n/I18nContext"
 import { useSettings } from "@/context/SettingsContext"
 import { feedSummaries, normalizeImportList, mergeFeedMetadata, rememberFeedMeta, forgetFeedMeta, type ImportPreset } from "./rssUtils"
 import { cn } from "@/lib/utils"
-import type { ApiError, QueueState, RssFeed } from "@/lib/types"
+import type { ApiError, QueueItem, QueueState, RssFeed } from "@/lib/types"
 
 /** 从队列状态推导每一条目的前端展示状态 */
 type EntryQueueStatus = "idle" | "queued" | "processing"
@@ -119,6 +119,26 @@ export function RssPage() {
     }
     return map
   }, [qState])
+
+  // key → 队列项，用于取消时拿到 queue item id。
+  const entryQueueItemMap = useMemo(() => {
+    const map: Record<string, QueueItem> = {}
+    for (const item of qState.items) {
+      if (item.status === "processing" || item.status === "queued") {
+        map[`${item.payload?.feed_id}:${item.payload?.entry_id}`] = item
+      }
+    }
+    return map
+  }, [qState])
+
+  // 取消队列项：后端会杀掉运行中的下载/ffmpeg/Whisper 并删记录，UI 经 SSE 自动刷新。
+  const cancelQueueItem = useCallback(async (item: QueueItem) => {
+    try {
+      await api.queueCancel(item.id, "tasks")
+    } catch (err) {
+      showError(t("task_creation_failed") + ((err as ApiError).detail || (err as Error).message || ""))
+    }
+  }, [showError, t])
 
   // ── 衍生数据 ─────────────────────────────────────────────────
 
@@ -534,7 +554,7 @@ export function RssPage() {
                           loading={isProcessing}
                           onClick={() => void enqueueTask(activeFeed.id, e.id, "summarize")}
                         >
-                          {isQueued ? "⏳" : isSummarized ? t("resummarize") : t("summarize")}
+                          {isQueued ? "waiting" : isSummarized ? t("resummarize") : t("summarize")}
                         </Button>
                         {hasAudio && (
                           <Button
@@ -544,6 +564,16 @@ export function RssPage() {
                             onClick={() => void enqueueTask(activeFeed.id, e.id, "download")}
                           >
                             {isDownloaded ? t("redownload") : t("nav_download")}
+                          </Button>
+                        )}
+                        {(isQueued || isProcessing) && entryQueueItemMap[entryKey] && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-[var(--text-dim)] hover:text-[var(--error)]"
+                            onClick={() => void cancelQueueItem(entryQueueItemMap[entryKey])}
+                          >
+                            {t("cancel")}
                           </Button>
                         )}
                       </div>

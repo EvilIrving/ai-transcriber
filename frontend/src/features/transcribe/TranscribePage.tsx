@@ -23,15 +23,24 @@ export function TranscribePage() {
   const [cancelHover, setCancelHover] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    void tr.recoverActiveTask()
-  }, [tr.recoverActiveTask])
+  const previousPathRef = useRef<string | null>(null)
 
   useEffect(() => {
+    const previousPath = previousPathRef.current
+    previousPathRef.current = location.pathname
+
     if (location.pathname !== "/transcribe") return
+
     const pending = take()
-    if (pending) tr.adoptRssTask(pending.taskId, pending.source)
-  }, [location.pathname, take, tr.adoptRssTask])
+    if (pending) {
+      tr.adoptRssTask(pending.taskId, pending.source)
+      return
+    }
+
+    if (previousPath !== "/transcribe") {
+      void tr.recoverActiveTask()
+    }
+  }, [location.pathname, take, tr.adoptRssTask, tr.recoverActiveTask])
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()

@@ -61,6 +61,14 @@ async def log_requests(request: Request, call_next):
 async def on_startup():
     await init_db()
 
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    """服务停止时(开发模式 Ctrl+C / 桌面应用退出触发的优雅关闭)，
+    取消所有进行中的任务并杀掉其登记的子进程，避免 ffmpeg 等孤儿进程残留。"""
+    import cancellation
+    cancellation.cancel_all()
+
 # CORS中间件配置
 app.add_middleware(
     CORSMiddleware,

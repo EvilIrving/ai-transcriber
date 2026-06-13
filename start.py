@@ -9,6 +9,7 @@ AI Transcriber — 桌面应用启动入口
 import os
 import sys
 import time
+import atexit
 import signal
 import threading
 import multiprocessing
@@ -103,6 +104,35 @@ os.environ.setdefault("WHISPER_MODEL_SIZE", "base")
 os.environ.setdefault("UPLOAD_MAX_MB", "200")
 
 
+_cleanup_done = threading.Event()
+
+
+def _shutdown_cleanup():
+    """退出前回收所有进行中的任务及其子进程。
+
+    桌面窗口关闭后 uvicorn(守护线程)会被直接抛弃，FastAPI 的 shutdown 钩子
+    未必触发；而用 start_new_session 起的 ffmpeg 在独立进程组里，不随主进程退出
+    而终止。这里直接调用同进程内的 cancellation.cancel_all() 把它们杀干净，
+    等价于开发模式下 Ctrl+C 关闭全部后台任务。可被多条退出路径重复调用(幂等)。
+    """
+    if _cleanup_done.is_set():
+        return
+    _cleanup_done.set()
+    try:
+        import cancellation
+        n = cancellation.cancel_all()
+        if n:
+            print(f"🧹 已终止 {n} 个进行中的任务")
+    except Exception:
+        pass
+
+
+def _signal_handler(signum, _frame):
+    """收到 SIGINT/SIGTERM(系统退出/Ctrl+C)：清理后强制退出。"""
+    _shutdown_cleanup()
+    os._exit(0)
+
+
 def _run_server():
     """在后台线程中运行 uvicorn 服务"""
     import traceback
@@ -157,6 +187,15 @@ def main():
         print(f"   ✅ 依赖加载完成 ({time.time()-t0:.1f}s)")
     except Exception as e:
         print(f"   ⚠️  依赖预加载失败: {e}")
+
+    # ── 退出清理：覆盖正常退出(atexit)与系统信号(SIGINT/SIGTERM)两条路径，
+    #    确保无论如何关闭，进行中的任务及其子进程(ffmpeg 等)都被回收。 ──
+    atexit.register(_shutdown_cleanup)
+    for _sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(_sig, _signal_handler)
+        except (ValueError, OSError):
+            pass  # 非主线程或平台不支持时忽略
 
     # 启动后端服务线程
     server_thread = threading.Thread(target=_run_server, daemon=True)
@@ -244,6 +283,8 @@ def main():
             confirm_close=True,
         )
         webview.start(debug=False)
+        # 窗口关闭，webview.start() 返回 → 立即回收后台任务，不等进程自然退出。
+        _shutdown_cleanup()
 
     except ImportError:
         # 如果未安装 pywebview，回退到浏览器

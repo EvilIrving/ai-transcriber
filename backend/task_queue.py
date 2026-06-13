@@ -175,7 +175,8 @@ class TaskQueueManager:
                 await self._broadcast_state(queue_name)
                 continue
 
-            await _db_set_processing(item_id, item_id)
+            task_id = payload.get("task_id", "") if isinstance(payload, dict) else ""
+            await _db_set_processing(item_id, task_id or item_id)
             await self._strategy.on_item_start(queue_name, item_id)
             await self._broadcast_state(queue_name)
             logger.info(f"开始处理队列项: {queue_name}/{item_id} type={item_type}")
