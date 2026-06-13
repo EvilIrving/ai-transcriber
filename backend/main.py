@@ -23,7 +23,7 @@ logger.info("日志输出到 %s", LOG_FILE)
 from db import init_db  # noqa: E402
 from task_store import PROJECT_ROOT  # noqa: E402
 import task_handlers  # noqa: F401,E402
-from routers import core, downloads, export, queue, rss, transcribe  # noqa: E402
+from routers import bots, core, downloads, export, queue, rss, transcribe  # noqa: E402
 
 app = FastAPI(title="AI Transcriber", version="1.0.0")
 
@@ -75,6 +75,12 @@ async def on_shutdown():
     取消所有进行中的任务并杀掉其登记的子进程，避免 ffmpeg 等孤儿进程残留。"""
     import cancellation
     cancellation.cancel_all()
+    # 停止所有常驻 Bot 长连接，避免 httpx 轮询协程残留。
+    try:
+        from bots import bot_manager
+        await bot_manager.shutdown()
+    except Exception as e:
+        logger.warning("停止 Bot 失败: %s", e)
 
 # CORS 中间件配置
 # 只允许桌面应用本地来源 + 开发 Vite 服务器，避免恶意网站通过 localhost fetch 读取数据
@@ -101,6 +107,7 @@ app.include_router(downloads.router)
 app.include_router(rss.router)
 app.include_router(queue.router)
 app.include_router(export.router)
+app.include_router(bots.router)
 
 
 # ── Whisper 模型预热状态 ──

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { api } from '@/lib/api'
-import type { ModelInfo } from '@/lib/types'
+import type { BotPlatformConfig, ModelInfo } from '@/lib/types'
 import { useI18n } from '@/i18n/I18nContext'
 
 export interface FetchStatus {
@@ -29,6 +29,11 @@ interface SettingsValue {
   setTwoStep: (v: boolean) => void
   setWhisperModel: (v: string) => void
   setHfEndpoint: (v: string) => void
+  /* Bot 集成配置（持久化到 localStorage，与 API Key 同样的存法）。 */
+  botConfigs: Record<string, BotPlatformConfig>
+  setBotConfig: (platform: string, patch: Partial<BotPlatformConfig>) => void
+  /* 把启用的 Bot 配置 + 当前 LLM 配置一并下发后端。 */
+  pushBotConfigs: () => ReturnType<typeof api.botsConfigure>
   fetchModels: (silent?: boolean) => Promise<void>
   refreshInterfaceStatus: () => Promise<void>
   /* Appends the standard model/auth fields to a FormData, matching
@@ -49,6 +54,7 @@ interface Persisted {
   models?: ModelInfo[]
   whisperModel?: string
   hfEndpoint?: string
+  botConfigs?: Record<string, BotPlatformConfig>
 }
 
 function loadPersisted(): Persisted {
@@ -74,6 +80,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [models, setModels] = useState<ModelInfo[]>(persisted.current.models || [])
   const [whisperModel, setWhisperModel] = useState(persisted.current.whisperModel || 'base')
   const [hfEndpoint, setHfEndpoint] = useState(persisted.current.hfEndpoint || '')
+  const [botConfigs, setBotConfigs] = useState<Record<string, BotPlatformConfig>>(
+    persisted.current.botConfigs || {},
+  )
   const [fetchStatus, setFetchStatus] = useState<FetchStatus>({ cls: '', msg: '' })
   const [whisperReady, setWhisperReady] = useState(false)
   const [whisperError, setWhisperError] = useState<string | null>(null)
@@ -82,13 +91,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   /* Persist settings whenever they change. */
   useEffect(() => {
-    const s: Persisted = { baseUrl, apiKey, model, summaryLang, useTwoStep: twoStep, models, whisperModel, hfEndpoint }
+    const s: Persisted = { baseUrl, apiKey, model, summaryLang, useTwoStep: twoStep, models, whisperModel, hfEndpoint, botConfigs }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
     } catch {
       /* ignore */
     }
-  }, [baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint])
+  }, [baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, botConfigs])
 
   const fetchModels = useCallback(
     async (silent = false) => {
@@ -172,6 +181,38 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshWhisperStatus])
 
+  const setBotConfig = useCallback((platform: string, patch: Partial<BotPlatformConfig>) => {
+    setBotConfigs((prev) => {
+      const current = prev[platform] || { enabled: false, token: '' }
+      return { ...prev, [platform]: { ...current, ...patch } }
+    })
+  }, [])
+
+  const pushBotConfigs = useCallback(() => {
+    return api.botsConfigure({
+      bots: botConfigs,
+      llm: {
+        api_key: apiKey.trim(),
+        base_url: baseUrl.trim().replace(/\/$/, ''),
+        model: model,
+        summary_language: summaryLang,
+        whisper_model: whisperModel,
+      },
+    })
+  }, [botConfigs, apiKey, baseUrl, model, summaryLang, whisperModel])
+
+  /* 后端只在内存里持有 Bot 配置，重启后会丢失。应用加载时若有启用的 Bot，
+     自动重新下发一次，让 Bot 随页面打开而恢复（与浏览器里保存的 API Key 同理）。 */
+  const didPushBots = useRef(false)
+  useEffect(() => {
+    if (didPushBots.current) return
+    const hasEnabled = Object.values(persisted.current.botConfigs || {}).some((b) => b?.enabled)
+    if (!hasEnabled) return
+    didPushBots.current = true
+    const id = setTimeout(() => void pushBotConfigs().catch(() => {}), 600)
+    return () => clearTimeout(id)
+  }, [pushBotConfigs])
+
   const appendModelFields = useCallback(
     (fd: FormData) => {
       fd.append('summary_language', summaryLang)
@@ -191,6 +232,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, fetchStatus,
         whisperReady, whisperError, configured,
         setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, setWhisperModel, setHfEndpoint,
+        botConfigs, setBotConfig, pushBotConfigs,
         fetchModels, refreshInterfaceStatus, appendModelFields,
       }}
     >
