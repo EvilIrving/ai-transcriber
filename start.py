@@ -32,43 +32,48 @@ BACKEND_DIR = APP_DIR / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-# ── 检测内置 FFmpeg ──
-def _find_ffmpeg() -> str | None:
-    """查找 FFmpeg 可执行文件，优先使用打包内置的版本"""
-    candidates = []
+# ── yt-dlp 运行时自更新：必须在任何 import yt_dlp 之前启用可写副本覆盖 ──
+# 让打包应用里的 yt-dlp 不被「构建时版本」永久冻结：启用已下好的可写副本（若有），
+# 并按周在后台拉取最新 stable（透明、不暴露任何参数；详见 yt_dlp_updater.py）。
+try:
+    import yt_dlp_updater
+    yt_dlp_updater.schedule_update()
+except Exception as _e:
+    print(f"⚠️  yt-dlp 自更新初始化失败（将用随包版本）: {_e}")
+
+# ── 检测内置 FFmpeg / FFprobe ──
+def _find_tool(tool: str) -> str | None:
+    """查找 ffmpeg / ffprobe 可执行文件，优先使用打包内置的版本。
+
+    打包后内置二进制与 exe 同级（macOS: Contents/MacOS/；Windows: 同目录）；
+    开发模式落在 ffmpeg_bin/（build_ffmpeg.sh 产物名带 -arm64 后缀）。
+    """
+    import shutil
+    exe = f"{tool}.exe" if sys.platform == "win32" else tool
     if getattr(sys, "frozen", False):
-        if sys.platform == "darwin":
-            candidates = [
-                APP_DIR / "ffmpeg",
-                APP_DIR / "bin" / "ffmpeg",
-            ]
-        elif sys.platform == "win32":
-            candidates = [
-                APP_DIR / "ffmpeg.exe",
-                APP_DIR / "bin" / "ffmpeg.exe",
-            ]
-        else:
-            candidates = [
-                APP_DIR / "ffmpeg",
-                APP_DIR / "bin" / "ffmpeg",
-            ]
+        candidates = [APP_DIR / exe, APP_DIR / "bin" / exe]
     else:
         candidates = [
-            APP_DIR / "ffmpeg_bin" / "ffmpeg",
-            APP_DIR / "bin" / "ffmpeg",
+            APP_DIR / "ffmpeg_bin" / exe,
+            APP_DIR / "ffmpeg_bin" / f"{tool}-arm64",
+            APP_DIR / "bin" / exe,
         ]
-
-    import shutil
     for p in candidates:
         if p.exists() and shutil.which(str(p)):
             return str(p)
     # fallback: system PATH
-    system_ffmpeg = shutil.which("ffmpeg")
-    return system_ffmpeg
+    return shutil.which(tool)
 
-FFMPEG_PATH = _find_ffmpeg()
+FFMPEG_PATH = _find_tool("ffmpeg")
+FFPROBE_PATH = _find_tool("ffprobe")
 if FFMPEG_PATH:
     os.environ["PATH"] = str(Path(FFMPEG_PATH).parent) + os.pathsep + os.environ.get("PATH", "")
+    # 把绝对路径显式交给后端：yt-dlp 用 ffmpeg_location、直接子进程用绝对路径，
+    # 不再依赖 PATH（打包后尤其 Windows 上 PATH 查找极易 FileNotFoundError）。
+    os.environ.setdefault("AIT_FFMPEG", FFMPEG_PATH)
+    os.environ.setdefault("AIT_FFMPEG_LOCATION", str(Path(FFMPEG_PATH).parent))
+if FFPROBE_PATH:
+    os.environ.setdefault("AIT_FFPROBE", FFPROBE_PATH)
 
 # ── 检测内置 Deno（YouTube nsig 签名解算所需的 JS 运行时） ──
 # yt-dlp 解 YouTube nsig 签名走 EJS 方案（platforms/youtube.py 的
@@ -137,6 +142,19 @@ def _seed_bundled_whisper_models():
         print(f"⚠️  内嵌模型播种失败（首次转录将尝试联网下载）: {e}")
 
 _seed_bundled_whisper_models()
+
+
+# ── 首次启动：后台确保默认模型(large-v3-turbo)就绪 ──
+# 内嵌只播种 base；默认模型在此后台下载，下载期间任务优雅回退到 base，
+# 完成后后续任务自动用上默认模型。网络不可达时静默放弃，不影响 base 转录。
+def _ensure_default_model():
+    try:
+        from whisper_models import ensure_default_model_async
+        ensure_default_model_async()
+    except Exception as e:
+        print(f"⚠️  默认模型后台准备失败（将用内嵌 base 回退）: {e}")
+
+_ensure_default_model()
 
 
 # ── 确保 faster-whisper 的 VAD 模型可被定位 ──

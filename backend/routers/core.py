@@ -1,8 +1,10 @@
 """核心路由：前端入口页、模型列表代理与诊断/日志访问。"""
 import asyncio
 import logging
+import os
 import sys
 from collections import deque
+from pathlib import Path
 
 import openai
 from fastapi import APIRouter, Form, HTTPException, Query
@@ -56,7 +58,10 @@ async def diagnostics():
     import shutil
 
     log_file = get_log_file()
-    ffmpeg = shutil.which("ffmpeg")
+    # 用后端实际解析到的绝对路径（含打包内置），而非仅查 PATH。
+    from video_processor import FFMPEG_BIN, FFPROBE_BIN
+    ffmpeg = FFMPEG_BIN if (os.path.sep in FFMPEG_BIN and Path(FFMPEG_BIN).exists()) else shutil.which("ffmpeg")
+    ffprobe = FFPROBE_BIN if (os.path.sep in FFPROBE_BIN and Path(FFPROBE_BIN).exists()) else shutil.which("ffprobe")
     deno = shutil.which("deno")
     try:
         import faster_whisper
@@ -78,6 +83,7 @@ async def diagnostics():
         "log_exists": log_file.exists(),
         "log_size_kb": round(log_file.stat().st_size / 1024, 1) if log_file.exists() else 0,
         "ffmpeg": ffmpeg or "未找到",
+        "ffprobe": ffprobe or "未找到",
         "deno": deno or "未找到",
         "faster_whisper": fw_ver,
         "yt_dlp": ytdlp_ver,

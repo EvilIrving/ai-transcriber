@@ -37,6 +37,10 @@ fi
 echo ""
 echo "📦 步骤 1/4: 安装打包依赖..."
 "$ROOT/venv/bin/pip" install -q pyinstaller pywebview
+# 始终把 yt-dlp 升到最新 stable 再打包：随包冻结的版本越新越好，
+# 运行时还有 yt_dlp_updater 做后续的周度自更新兜底。
+echo "   升级 yt-dlp 到最新 stable..."
+"$ROOT/venv/bin/pip" install -q --upgrade yt-dlp
 
 # ── 2. 检查 FFmpeg 静态二进制 ──
 echo ""
@@ -53,16 +57,18 @@ _ffmpeg_arch_ok() {
     lipo -archs "$1" 2>/dev/null | tr ' ' '\n' | grep -qx "arm64"
 }
 
-if _ffmpeg_arch_ok "$FFMPEG_BIN"; then
+FFPROBE_BIN="$FFMPEG_DIR/ffprobe-arm64"
+
+if _ffmpeg_arch_ok "$FFMPEG_BIN" && _ffmpeg_arch_ok "$FFPROBE_BIN"; then
     # 确保不依赖 Homebrew dylib（拒绝动态链接版本）
-    if otool -L "$FFMPEG_BIN" 2>/dev/null | grep -q '/opt/homebrew\|/usr/local/Cellar'; then
-        echo "   ❌ $FFMPEG_BIN 是动态链接版本，无法分发到其他 Mac"
+    if otool -L "$FFMPEG_BIN" "$FFPROBE_BIN" 2>/dev/null | grep -q '/opt/homebrew\|/usr/local/Cellar'; then
+        echo "   ❌ FFmpeg/FFprobe 是动态链接版本，无法分发到其他 Mac"
         echo "      请运行: bash scripts/build_ffmpeg.sh"
         exit 1
     fi
-    echo "   ✅ FFmpeg arm64 静态二进制就绪: $FFMPEG_BIN"
+    echo "   ✅ FFmpeg/FFprobe arm64 静态二进制就绪"
 else
-    echo "   ❌ 未找到 arm64 静态 FFmpeg"
+    echo "   ❌ 未找到 arm64 静态 FFmpeg/FFprobe"
     echo "      请先运行: bash scripts/build_ffmpeg.sh"
     exit 1
 fi
@@ -146,6 +152,12 @@ if [ -f "$FFMPEG_BIN" ]; then
     cp "$FFMPEG_BIN" "$MACOS_DIR/ffmpeg"
     chmod +x "$MACOS_DIR/ffmpeg"
     echo "   ✅ FFmpeg ($ARCH) 已注入 .app/Contents/MacOS/"
+fi
+# ffprobe：时长校验/重封装依赖；缺失会让校验静默失效。
+if [ -f "$FFPROBE_BIN" ]; then
+    cp "$FFPROBE_BIN" "$MACOS_DIR/ffprobe"
+    chmod +x "$MACOS_DIR/ffprobe"
+    echo "   ✅ FFprobe ($ARCH) 已注入 .app/Contents/MacOS/"
 fi
 
 # ── 注入 Deno（YouTube nsig 签名解算所需的 JS 运行时） ──
