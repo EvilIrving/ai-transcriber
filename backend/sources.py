@@ -17,8 +17,6 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
 class ExtractResult:
     """媒体来源提取结果，供 ``run_post_extract_pipeline`` 直接消费。"""
 

@@ -150,8 +150,13 @@ async def run_post_extract_pipeline(
     llm_timeout = getattr(request_summarizer, '_llm_timeout', 300.0)
 
     optimize_task = asyncio.create_task(
-        _llm_call(request_summarizer.optimize_transcript, raw_script,
-                  llm_timeout=llm_timeout, task_name="optimize_transcript")
+        _llm_call(
+            request_summarizer.optimize_transcript,
+            raw_script,
+            video_title,
+            llm_timeout=llm_timeout,
+            task_name="optimize_transcript",
+        )
     )
 
     # ── 生成摘要prompt + 生成摘要 ────────────────────────

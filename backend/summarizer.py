@@ -4,7 +4,7 @@ from typing import Optional
 
 from config import settings
 from exceptions import LLMError
-from llm_sanitize import strip_llm_artifacts
+from llm_sanitize import strip_llm_artifacts, strip_transcript_optimization_output
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +88,14 @@ class Summarizer:
             "ar": "العربية"
         }
     
-    def optimize_transcript(self, raw_transcript: str) -> str:
+    def optimize_transcript(self, raw_transcript: str, video_title: Optional[str] = None) -> str:
         """
         优化转录文本：修正错别字，按含义分段
         支持长文本自动分块处理
         
         Args:
             raw_transcript: 原始转录文本
+            video_title: 视频/播客标题（弱提示，供领域预分析参考）
             
         Returns:
             优化后的转录文本（Markdown格式）
@@ -106,20 +107,82 @@ class Summarizer:
 
             # 预处理：仅移除时间戳与元信息，保留全部口语/重复内容
             preprocessed = self._remove_timestamps_and_meta(raw_transcript)
+            domain_context = self._infer_transcript_domain(preprocessed, video_title)
+
             # 使用JS策略：按字符长度分块（更贴近tokens上限，避免估算误差）
             detected_lang_code = self._detect_transcript_language(preprocessed)
             max_chars_per_chunk = 4000  # 对齐JS：每块最大约4000字符
 
             if len(preprocessed) > max_chars_per_chunk:
                 logger.info(f"文本较长({len(preprocessed)} chars)，启用分块优化")
-                return self._format_long_transcript_in_chunks(preprocessed, detected_lang_code, max_chars_per_chunk)
+                return self._format_long_transcript_in_chunks(
+                    preprocessed, detected_lang_code, max_chars_per_chunk, domain_context
+                )
             else:
-                return self._format_single_chunk(preprocessed, detected_lang_code)
+                return self._format_single_chunk(preprocessed, detected_lang_code, domain_context)
 
         except Exception as e:
             logger.error(f"优化转录文本失败: {str(e)}")
             logger.info("返回原始转录文本")
             return raw_transcript
+
+    def _sample_transcript_for_domain(self, text: str, max_chars: int = 5000) -> str:
+        """取转录采样供领域预分析：短文全文，长文取开头+中间各一段。"""
+        text = (text or "").strip()
+        if len(text) <= max_chars:
+            return text
+        half = max_chars // 2
+        head = text[:half]
+        mid_start = max(0, len(text) // 2 - half // 2)
+        tail = text[mid_start : mid_start + half]
+        return f"{head}\n\n[...]\n\n{tail}"
+
+    def _infer_transcript_domain(
+        self, preprocessed: str, video_title: Optional[str] = None
+    ) -> str:
+        """预分析转录采样，生成简短的领域与纠偏约束（非完整 prompt）。"""
+        if not self.client or not (preprocessed or "").strip():
+            return ""
+        sample = self._sample_transcript_for_domain(preprocessed)
+        title_hint = ""
+        if video_title and video_title.strip():
+            title_hint = f"\n\n来源标题（仅供参考，可能不准确）：{video_title.strip()}"
+
+        system_prompt = (
+            "你是转录内容分析助手。阅读音频转录采样，输出简短的「领域与纠偏约束」，"
+            "供后续转录优化步骤参考。\n\n"
+            "要求：\n"
+            "- 只输出约束块，不要改写原文\n"
+            "- 不要输出完整优化 prompt，不要列举逐词替换表\n"
+            "- 无把握时不要臆造具体专名\n\n"
+            "固定格式（每项一行）：\n"
+            "【内容类型】...\n"
+            "【主要话题】...\n"
+            "【语言特点】...\n"
+            "【纠偏重点】...\n"
+            "【勿过度修正】..."
+        )
+        user_prompt = (
+            f"请分析以下转录采样，输出领域与纠偏约束：{title_hint}\n\n"
+            f"---\n{sample}\n---"
+        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.fast_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=450,
+                temperature=0.15,
+            )
+            brief = strip_llm_artifacts(response.choices[0].message.content or "").strip()
+            if brief:
+                logger.info(f"转录领域预分析完成，约束长度: {len(brief)}")
+            return brief
+        except Exception as e:
+            logger.warning(f"转录领域预分析失败，跳过约束: {e}")
+            return ""
 
     def _estimate_tokens(self, text: str) -> int:
         """
@@ -161,45 +224,77 @@ class Summarizer:
         formatted = re.sub(r"\n+$", "", formatted)
         return formatted
 
-    def _format_single_chunk(self, chunk_text: str, transcript_language: str = 'zh') -> str:
+    def _format_single_chunk(
+        self,
+        chunk_text: str,
+        transcript_language: str = 'zh',
+        domain_context: str = "",
+    ) -> str:
         """单块优化（修正+格式化），遵循4000 tokens 限制。"""
+        domain_block = (
+            f"\n\n**领域与纠偏约束（预分析，仅供参考）：**\n{domain_context}\n"
+            if domain_context
+            else ""
+        )
+        output_rules_zh = (
+            "**输出格式（必须严格遵守）：**\n"
+            "- 仅输出优化后的转录正文，段落之间用空行分隔\n"
+            "- 禁止输出：思考过程、改动说明、分析评论、编辑备注、括号内注释\n"
+            "- 禁止前后缀：如「以下是优化后的文本」「优化结果如下」等\n"
+            "- 禁止 markdown 标题（# / ##）及任何非说话内容的元信息\n"
+            "- 不要复述或引用上述约束；直接开始正文"
+        )
+        output_rules_en = (
+            "**Output format (strict):**\n"
+            "- Output ONLY the optimized transcript body; blank lines between paragraphs\n"
+            "- Do NOT output: reasoning, change logs, commentary, editor notes, or bracketed meta\n"
+            "- No wrappers like \"Here is the optimized transcript\"\n"
+            "- No markdown headings (# / ##) or any non-spoken meta\n"
+            "- Do not repeat the constraints above; start with the transcript directly"
+        )
         # 构建与JS版一致的系统/用户提示
         if transcript_language == 'zh':
             prompt = (
                 "请对以下音频转录文本进行智能优化和格式化，要求：\n\n"
                 "**内容优化（正确性优先）：**\n"
-                "1. 错误修正（转录错误/错别字/同音字/专有名词）\n"
+                "1. 错误修正（转录错误/错别字/同音字/专有名词），尤其注意中英文混杂的技术名词与人名\n"
                 "2. 适度改善语法，补全不完整句子，保持原意和语言不变\n"
                 "3. 口语处理：保留自然口语与重复表达，不要删减内容，仅添加必要标点\n"
-                "4. **绝对不要改变人称代词（I/我、you/你等）和说话者视角**\n\n"
+                "4. **绝对不要改变人称代词（I/我、you/你等）和说话者视角**\n"
+                "5. 专名纠偏需有上下文把握；不确定时保留原转写，宁可少改\n\n"
                 "**分段规则：**\n"
                 "- 按主题和逻辑含义分段，每段包含1-8个相关句子\n"
                 "- 单段长度不超过400字符\n"
                 "- 避免过多的短段落，合并相关内容\n\n"
-                "**格式要求：**Markdown 段落，段落间空行\n\n"
+                f"{output_rules_zh}\n"
+                f"{domain_block}\n"
                 f"原始转录文本：\n{chunk_text}"
             )
             system_prompt = (
                 "你是专业的音频转录文本优化助手，修正错误、改善通顺度和排版格式，"
                 "必须保持原意，不得删减口语/重复/细节；仅移除时间戳或元信息。"
                 "绝对不要改变人称代词或说话者视角。这可能是访谈对话，访谈者用'you'，被访者用'I/we'。"
+                "根据领域约束识别可能的同音误识专名，但输出只能是转录正文，不得包含任何过程说明。"
             )
         else:
             prompt = (
                 "Please intelligently optimize and format the following audio transcript text:\n\n"
                 "Content Optimization (Accuracy First):\n"
-                "1. Error Correction (typos, homophones, proper nouns)\n"
+                "1. Error Correction (typos, homophones, proper nouns), especially mixed-language tech terms and names\n"
                 "2. Moderate grammar improvement, complete incomplete sentences, keep original language/meaning\n"
                 "3. Speech processing: keep natural fillers and repetitions, do NOT remove content; only add punctuation if needed\n"
-                "4. **NEVER change pronouns (I, you, he, she, etc.) or speaker perspective**\n\n"
+                "4. **NEVER change pronouns (I, you, he, she, etc.) or speaker perspective**\n"
+                "5. Correct proper nouns only when context is clear; when unsure, keep the original wording\n\n"
                 "Segmentation Rules: Group 1-8 related sentences per paragraph by topic/logic; paragraph length NOT exceed 400 characters; avoid too many short paragraphs\n\n"
-                "Format: Markdown paragraphs with blank lines between paragraphs\n\n"
+                f"{output_rules_en}\n"
+                f"{domain_block}\n"
                 f"Original transcript text:\n{chunk_text}"
             )
             system_prompt = (
                 "You are a professional transcript formatting assistant. Fix errors and improve fluency "
-                "without changing meaning or removing any content; only timestamps/meta may be removed; keep Markdown paragraphs with blank lines. "
-                "NEVER change pronouns or speaker perspective. This may be an interview: interviewer uses 'you', interviewee uses 'I/we'."
+                "without changing meaning or removing any content; only timestamps/meta may be removed. "
+                "NEVER change pronouns or speaker perspective. This may be an interview: interviewer uses 'you', interviewee uses 'I/we'. "
+                "Use domain constraints to fix likely misheard terms, but output ONLY the transcript body with no process commentary."
             )
 
         try:
@@ -212,7 +307,9 @@ class Summarizer:
                 max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
                 temperature=0.1
             )
-            optimized_text = strip_llm_artifacts(response.choices[0].message.content or "")
+            optimized_text = strip_transcript_optimization_output(
+                response.choices[0].message.content or ""
+            )
             # 空输出（finish_reason=length 截断 / 内容过滤 / reasoning 模型耗尽 tokens）视为失败，回退基础格式化
             if not optimized_text.strip():
                 finish_reason = getattr(response.choices[0], "finish_reason", None)
@@ -334,7 +431,13 @@ class Summarizer:
             paras.append(cur.strip())
         return self._ensure_markdown_paragraphs("\n\n".join(paras))
 
-    def _format_long_transcript_in_chunks(self, raw_transcript: str, transcript_language: str, max_chars_per_chunk: int) -> str:
+    def _format_long_transcript_in_chunks(
+        self,
+        raw_transcript: str,
+        transcript_language: str,
+        max_chars_per_chunk: int,
+        domain_context: str = "",
+    ) -> str:
         """智能分块+上下文+去重 合成优化文本（JS策略移植）。"""
         import re
         # 先按句子切分，组装不超过max_chars_per_chunk的块
@@ -370,7 +473,7 @@ class Summarizer:
                 marker = f"[上文续：{prev_tail}]" if transcript_language == 'zh' else f"[Context continued: {prev_tail}]"
                 chunk_with_context = marker + "\n\n" + c
             try:
-                oc = self._format_single_chunk(chunk_with_context, transcript_language)
+                oc = self._format_single_chunk(chunk_with_context, transcript_language, domain_context)
                 # 移除上下文标记
                 oc = re.sub(r"^\[(上文续|Context continued)：?:?.*?\]\s*", "", oc, flags=re.S)
                 optimized.append(oc)
@@ -452,7 +555,11 @@ class Summarizer:
         filtered = []
         for line in lines:
             stripped = line.strip()
-            if re.match(r"^#{1,6}\s*transcript(\s+text)?\s*$", stripped, flags=re.I):
+            if re.match(
+                r"^#{1,6}\s*(?:transcript|优化|转录|transcription)(\s|\Z)",
+                stripped,
+                flags=re.I,
+            ):
                 continue
             filtered.append(line)
         return '\n'.join(filtered)

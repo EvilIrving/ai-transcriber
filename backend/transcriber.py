@@ -120,7 +120,7 @@ class Transcriber:
                     compression_ratio_threshold=2.4,  # 压缩比阈值，检测重复
                     log_prob_threshold=-1.0,  # 日志概率阈值
                     # 避免错误累积导致的连环重复
-                    condition_on_previous_text=False
+                    condition_on_previous_text=False,
                 )
 
                 detected_language = info.language

@@ -31,7 +31,9 @@ class ASRBackend(Protocol):
 class SummarizerBackend(Protocol):
     """文本优化 + 摘要后端契约。任何 OpenAI 兼容/自研实现都可满足。"""
 
-    def optimize_transcript(self, raw_transcript: str) -> str: ...
+    def optimize_transcript(
+        self, raw_transcript: str, video_title: Optional[str] = None
+    ) -> str: ...
 
     def summarize(
         self, transcript: str, target_language: str = "zh", video_title: Optional[str] = None
