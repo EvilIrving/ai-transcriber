@@ -69,10 +69,16 @@ async def on_shutdown():
     import cancellation
     cancellation.cancel_all()
 
-# CORS中间件配置
+# CORS 中间件配置
+# 只允许桌面应用本地来源 + 开发 Vite 服务器，避免恶意网站通过 localhost fetch 读取数据
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

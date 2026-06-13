@@ -28,7 +28,9 @@ def _get_log_dir() -> Path:
             base = Path.home() / ".local" / "share" / "ai-transcriber"
         log_dir = base / "logs"
     else:
-        log_dir = Path(__file__).resolve().parent.parent / "temp" / "logs"
+        # 使用 task_store.TEMP_DIR 保证与 db.py / pipeline 同一数据目录
+        from task_store import TEMP_DIR  # delayed import — avoid circular import
+        log_dir = TEMP_DIR / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
 

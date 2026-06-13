@@ -38,39 +38,32 @@ echo ""
 echo "📦 步骤 1/4: 安装打包依赖..."
 "$ROOT/venv/bin/pip" install -q pyinstaller pywebview
 
-# ── 2. 下载 FFmpeg 静态构建 ──
+# ── 2. 检查 FFmpeg 静态二进制 ──
 echo ""
-echo "📦 步骤 2/4: 准备 FFmpeg..."
+echo "📦 步骤 2/4: 检查 FFmpeg..."
 
 FFMPEG_DIR="$ROOT/ffmpeg_bin"
 mkdir -p "$FFMPEG_DIR"
 
 FFMPEG_BIN="$FFMPEG_DIR/ffmpeg-arm64"
 
-# 校验二进制确为 arm64（lipo 对 thin/fat 均可用）
+# 校验二进制确为 arm64
 _ffmpeg_arch_ok() {
     [ -f "$1" ] || return 1
     lipo -archs "$1" 2>/dev/null | tr ' ' '\n' | grep -qx "arm64"
 }
 
 if _ffmpeg_arch_ok "$FFMPEG_BIN"; then
-    echo "   FFmpeg (arm64) 已缓存，跳过"
-else
-    # arm64 无稳定的静态下载源 → 复制宿主 Homebrew 的 ffmpeg（Apple Silicon 上即 arm64）
-    rm -f "$FFMPEG_BIN"
-    if command -v ffmpeg &>/dev/null; then
-        echo "   从 Homebrew 复制 FFmpeg (arm64)..."
-        cp "$(command -v ffmpeg)" "$FFMPEG_BIN"
-        chmod +x "$FFMPEG_BIN" 2>/dev/null || true
+    # 确保不依赖 Homebrew dylib（拒绝动态链接版本）
+    if otool -L "$FFMPEG_BIN" 2>/dev/null | grep -q '/opt/homebrew\|/usr/local/Cellar'; then
+        echo "   ❌ $FFMPEG_BIN 是动态链接版本，无法分发到其他 Mac"
+        echo "      请运行: bash scripts/build_ffmpeg.sh"
+        exit 1
     fi
-fi
-
-if _ffmpeg_arch_ok "$FFMPEG_BIN"; then
-    echo "   ✅ FFmpeg (arm64) 就绪: $FFMPEG_BIN"
+    echo "   ✅ FFmpeg arm64 静态二进制就绪: $FFMPEG_BIN"
 else
-    echo "   ❌ 无法获取 arm64 架构的 FFmpeg。"
-    echo "      请安装 Homebrew ffmpeg (brew install ffmpeg) 后重试，"
-    echo "      或手动将 arm64 静态二进制放置到 $FFMPEG_BIN"
+    echo "   ❌ 未找到 arm64 静态 FFmpeg"
+    echo "      请先运行: bash scripts/build_ffmpeg.sh"
     exit 1
 fi
 

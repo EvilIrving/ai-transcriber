@@ -13,7 +13,21 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path(__file__).parent.parent / "temp" / "transcriber.db"
+_db_path: Path | None = None
+
+
+def _get_db_path() -> Path:
+    """返回 DB 文件路径。
+
+    frozen 时使用 task_store.TEMP_DIR（~/Library/Application Support/ai-transcriber），
+    避免写 .app bundle 只读区域。延迟导入避免与 task_store 的循环依赖。
+    """
+    global _db_path
+    if _db_path is not None:
+        return _db_path
+    from task_store import TEMP_DIR  # delayed import — avoid circular import
+    _db_path = TEMP_DIR / "transcriber.db"
+    return _db_path
 
 TASK_FIXED_COLUMNS = (
     "status",
@@ -28,12 +42,12 @@ TASK_FIXED_COLUMNS = (
 
 
 def _ensure_dir():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _get_db_path().parent.mkdir(parents=True, exist_ok=True)
 
 
 def _connect() -> sqlite3.Connection:
     _ensure_dir()
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn = sqlite3.connect(str(_get_db_path()), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
