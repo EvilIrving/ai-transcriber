@@ -23,8 +23,10 @@ AI Transcriber transforms video/audio/podcast links (30+ platforms via yt-dlp) a
 │  cancellation.py  ── Task cancellation + orphan cleanup   │
 │  summarizer.py    ── LLM summary + two-step               │
 │  transcriber.py   ── Faster-Whisper (CTranslate2)         │
+│  whisper_models.py ── Model catalog/download/cache        │
 │  translator.py    ── LLM translation                      │
 │  video_processor.py ── yt-dlp + FFmpeg                    │
+│  yt_dlp_updater.py ── Weekly background yt-dlp self-update │
 │  llm_sanitize.py  ── LLM artifact cleanup                 │
 │  rss_reader.py    ── RSS feed parsing                     │
 │  exporter.py      ── MD/TXT/DOCX/PDF export               │
@@ -135,6 +137,9 @@ cd backend && python -c "import main; print(len(main.app.routes))"
 5. **Cancellation is cooperative** — `cancellation.py` exposes `_cancel_events` dict keyed by task ID; pipeline stages check `cancelled()` periodically and raise `TaskCancelledException`.
 6. **Frontend i18n** — dictionaries in `frontend/src/i18n/dictionaries.ts`; React context in `I18nContext.tsx`. Four languages: en, zh, ja, ko.
 7. **Design tokens** — oklch-based CSS custom properties in `index.css`; dark-first, light-supported. Accent is amber-copper (`oklch(58% 0.13 60)`). Max-width: 720px for prose.
+8. **Whisper model strategy** — default is `large-v3-turbo` (CPU sweet spot, covers en/zh/ja/ko). `whisper_models.py` keeps `base` as the embedded offline fallback (`BUILTIN_MODEL`); the default downloads in the background on first launch (`ensure_default_model_async`) and `_resolve_available_size` gracefully falls back to `base` until it's ready. The default pipeline path calls `get_transcriber()` (re-resolves each task) rather than the frozen `transcriber` singleton.
+9. **yt-dlp is not version-frozen in packaged builds** — `yt_dlp_updater.py` keeps a writable copy ahead of the bundled one on `sys.path` and refreshes it from PyPI stable on a throttled (weekly) background schedule. Builds also `pip install -U yt-dlp`. Transparent to users; no exposed params.
+10. **FFmpeg/FFprobe via absolute paths** — `start.py` locates both binaries (bundled or PATH) and exports `AIT_FFMPEG` / `AIT_FFPROBE` / `AIT_FFMPEG_LOCATION`. `video_processor.py` passes `ffmpeg_location` to yt-dlp and runs ffmpeg/ffprobe through `_run_media_proc` (process group + cancel token + library-path cleanup + timeout, no `shell=True`). Never call `ffmpeg`/`ffprobe` by bare name relying on PATH.
 
 ### Frontend Stack
 

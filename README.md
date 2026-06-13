@@ -229,11 +229,13 @@ API Base URL, API Key, model, summary language, and two-step summary are configu
 
 | Model | Params | Multilingual | Speed | Memory |
 |-------|--------|-------------|-------|--------|
-| tiny | 39 M | ✓ | Fast | ~150 MB |
-| base | 74 M | ✓ | Medium | ~250 MB |
+| base | 74 M | ✓ | Fast | ~150 MB |
 | small | 244 M | ✓ | Medium | ~750 MB |
 | medium | 769 M | ✓ | Slow | ~1.5 GB |
-| large | 1550 M | ✓ | Very Slow | ~3 GB |
+| **large-v3-turbo** (default) | 809 M | ✓ | Fast | ~1.6 GB |
+| large-v3 | 1550 M | ✓ | Very Slow | ~3 GB |
+
+**`large-v3-turbo` is the default** — the best speed/accuracy/memory balance on CPU for all four UI languages (incl. CJK). It downloads automatically on first use; the lightweight `base` model ships embedded as an offline fallback and is used until the default finishes downloading in the background. yt-dlp is also kept fresh via a throttled weekly background self-update so platform extractors don't go stale.
 
 ## 🔧 FAQ
 
@@ -293,7 +295,7 @@ A:
 - **Docker processing**: 500 MB – 2 GB (model-dependent)
 - **Traditional deployment idle**: ~50–100 MB
 - **Processing peak**: Base + Whisper model + ~500 MB for video processing
-- **Recommended**: 4 GB+ RAM for smooth operation; use `tiny` or `base` models if memory is tight
+- **Recommended**: 4 GB+ RAM for smooth operation; pick the `base` or `small` model if memory is tight
 
 ## 🖥️ macOS Desktop App
 
@@ -306,7 +308,7 @@ brew install librsvg
 # Build
 bash scripts/build_macos.sh
 
-# Run (first launch downloads Whisper model ~250 MB)
+# Run (ships with base embedded; the default large-v3-turbo downloads in the background on first launch)
 open "dist/AI Transcriber.app"
 
 # API key / model settings
