@@ -9,7 +9,8 @@
     "dev": "pnpm stop; concurrently -k -n api,web -c blue,green \"pnpm serve:api\" \"pnpm dev:web\"",
     "build": "cd frontend && pnpm install && pnpm build",
     "install:all": "cd frontend && pnpm install",
-    "lint": "cd frontend && pnpm lint"
+    "lint": "cd frontend && pnpm lint",
+    "test:api": "cd backend && ../venv/bin/python -m pytest"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
