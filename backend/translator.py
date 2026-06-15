@@ -5,6 +5,7 @@ from typing import Optional
 from openai import OpenAI
 
 from llm_sanitize import strip_llm_artifacts, extract_tagged
+from prompts import translate as translate_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -224,31 +225,17 @@ class Translator:
     
     async def _translate_single_text(self, text: str, target_lang_name: str, source_lang_name: str) -> str:
         """翻译单个文本块"""
-        system_prompt = f"""你是专业翻译专家。请将{source_lang_name}文本准确翻译为{target_lang_name}。
-
-翻译要求：
-- 保持原文的格式和结构（包括段落分隔、标题等）
-- 准确传达原意，语言自然流畅
-- 保留专业术语的准确性
-- 不要添加解释或注释
-- 如果遇到Markdown格式，请保持格式不变
-- 把译文放在 <translation> 和 </translation> 标签之间；标签之外不要输出任何字符（前言、尾注、客套话等一律不要）。"""
-
-        user_prompt = f"""请将以下{source_lang_name}文本翻译为{target_lang_name}：
-
-{text}
-
-把翻译结果放在 <translation>...</translation> 内。"""
-
+        prompt = translate_prompts.SINGLE
         try:
             response = self.client.chat.completions.create(
                 model=self._translation_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=4000,
-                temperature=0.1
+                messages=prompt.render(
+                    source_lang_name=source_lang_name,
+                    target_lang_name=target_lang_name,
+                    text=text,
+                ),
+                max_tokens=prompt.max_tokens,
+                temperature=prompt.temperature,
             )
 
             return extract_tagged(response.choices[0].message.content or "", "translation")
@@ -266,33 +253,19 @@ class Translator:
         for i, chunk in enumerate(chunks):
             logger.info(f"正在翻译第 {i+1}/{len(chunks)} 块...")
             
-            system_prompt = f"""你是专业翻译专家。请将{source_lang_name}文本准确翻译为{target_lang_name}。
-
-这是完整文档的第{i+1}部分，共{len(chunks)}部分。
-
-翻译要求：
-- 保持原文的格式和结构
-- 准确传达原意，语言自然流畅
-- 保留专业术语的准确性
-- 不要添加解释或注释
-- 保持与前后文的连贯性
-- 把译文放在 <translation> 和 </translation> 标签之间；标签之外不要输出任何字符。"""
-
-            user_prompt = f"""请将以下{source_lang_name}文本翻译为{target_lang_name}：
-
-{chunk}
-
-把翻译结果放在 <translation>...</translation> 内。"""
-
+            prompt = translate_prompts.CHUNK
             try:
                 response = self.client.chat.completions.create(
                     model=self._translation_model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    max_tokens=4000,
-                    temperature=0.1
+                    messages=prompt.render(
+                        source_lang_name=source_lang_name,
+                        target_lang_name=target_lang_name,
+                        text=chunk,
+                        part=i + 1,
+                        total=len(chunks),
+                    ),
+                    max_tokens=prompt.max_tokens,
+                    temperature=prompt.temperature,
                 )
 
                 translated_chunk = response.choices[0].message.content or ""

@@ -143,6 +143,25 @@ pnpm dev
 open -na "Google Chrome" --args --app="http://localhost:5173"
 ```
 
+### 测试
+
+后端（pytest）与前端（Vitest）均有单元测试套件。
+
+```bash
+# 全部（后端 + 前端）
+pnpm test
+
+# 仅后端 —— pytest（先装开发依赖）
+pip install -r requirements-dev.txt
+pnpm test:api
+
+# 仅前端 —— Vitest（jsdom + Testing Library）
+pnpm test:web              # 跑一次
+cd frontend && pnpm test:watch   # 监听模式
+```
+
+面向大模型的输出（转录优化、摘要、翻译）通过结构化 / 标签包裹的方式约束，并有单元测试覆盖，无需再手动验证该行为。
+
 ## 📖 使用指南
 
 1. **选择输入方式：链接或本地文件**

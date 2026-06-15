@@ -128,6 +128,25 @@ macOS에서 개발 UI를 독립 Chrome 앱 창으로 열려면:
 open -na "Google Chrome" --args --app="http://localhost:5173"
 ```
 
+### 테스트
+
+백엔드(pytest)와 프론트엔드(Vitest) 모두 단위 테스트 스위트가 있습니다.
+
+```bash
+# 전체(백엔드 + 프론트엔드)
+pnpm test
+
+# 백엔드만 —— pytest(먼저 개발 의존성 설치)
+pip install -r requirements-dev.txt
+pnpm test:api
+
+# 프론트엔드만 —— Vitest(jsdom + Testing Library)
+pnpm test:web              # 한 번 실행
+cd frontend && pnpm test:watch   # 워치 모드
+```
+
+LLM 출력(전사 최적화, 요약, 번역)은 구조화/태그 래핑 방식으로 제약되며 단위 테스트로 커버되므로 이 동작을 수동으로 확인할 필요가 없습니다.
+
 ## 📖 사용 가이드
 
 1. **입력 선택 — URL 또는 파일**

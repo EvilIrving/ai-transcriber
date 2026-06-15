@@ -11,6 +11,8 @@ from llm_sanitize import (
     strip_transcript_optimization_output,
     extract_tagged,
 )
+from prompts import transcript as transcript_prompts
+from prompts import summary as summary_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -182,33 +184,13 @@ class Summarizer:
         if video_title and video_title.strip():
             title_hint = f"\n\n来源标题（仅供参考，可能不准确）：{video_title.strip()}"
 
-        system_prompt = (
-            "你是转录内容分析助手。阅读音频转录采样，输出简短的「领域与纠偏约束」，"
-            "供后续转录优化步骤参考。\n\n"
-            "要求：\n"
-            "- 只输出约束块，不要改写原文\n"
-            "- 不要输出完整优化 prompt，不要列举逐词替换表\n"
-            "- 无把握时不要臆造具体专名\n\n"
-            "固定格式（每项一行）：\n"
-            "【内容类型】...\n"
-            "【主要话题】...\n"
-            "【语言特点】...\n"
-            "【纠偏重点】...\n"
-            "【勿过度修正】..."
-        )
-        user_prompt = (
-            f"请分析以下转录采样，输出领域与纠偏约束：{title_hint}\n\n"
-            f"---\n{sample}\n---"
-        )
+        prompt = transcript_prompts.DOMAIN_INFER
         try:
             response = self.client.chat.completions.create(
                 model=self.fast_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=450,
-                temperature=0.15,
+                messages=prompt.render(title_hint=title_hint, sample=sample),
+                max_tokens=prompt.max_tokens,
+                temperature=prompt.temperature,
             )
             brief = strip_llm_artifacts(response.choices[0].message.content or "").strip()
             if brief:
@@ -265,74 +247,18 @@ class Summarizer:
         domain_context: str = "",
     ) -> str:
         """单块优化（修正+格式化），遵循4000 tokens 限制。"""
+        # 领域约束作为可选上下文层；空串时在合并时被自动跳过。
         domain_block = (
-            f"\n\n**领域与纠偏约束（预分析，仅供参考）：**\n{domain_context}\n"
+            f"**领域与纠偏约束（预分析，仅供参考）：**\n{domain_context}"
             if domain_context
             else ""
         )
-        output_rules_zh = (
-            "**输出格式（必须严格遵守）：**\n"
-            "- 把优化后的转录正文放在 <transcript> 和 </transcript> 标签之间，段落之间用空行分隔\n"
-            "- 标签之外不要输出任何字符（包括思考过程、改动说明、前后缀、检测语言等元信息）\n"
-            "- 标签内只放说话正文，不要 markdown 标题（# / ##）\n"
-            "- 示例：<transcript>\n第一段……\n\n第二段……\n</transcript>"
+        prompt = (
+            transcript_prompts.OPTIMIZE_ZH
+            if transcript_language == 'zh'
+            else transcript_prompts.OPTIMIZE_EN
         )
-        output_rules_en = (
-            "**Output format (strict):**\n"
-            "- Put the optimized transcript between <transcript> and </transcript> tags; blank lines between paragraphs\n"
-            "- Output NOTHING outside the tags (no reasoning, change logs, wrappers, or language/meta lines)\n"
-            "- Inside the tags put spoken content only; no markdown headings (# / ##)\n"
-            "- Example: <transcript>\nFirst paragraph...\n\nSecond paragraph...\n</transcript>"
-        )
-        # 构建与JS版一致的系统/用户提示
-        if transcript_language == 'zh':
-            prompt = (
-                "请对以下音频转录文本进行智能优化和格式化，要求：\n\n"
-                "**内容优化（正确性优先）：**\n"
-                "1. 错误修正（转录错误/错别字/同音字/专有名词），尤其注意中英文混杂的技术名词与人名\n"
-                "2. 适度改善语法，补全不完整句子，保持原意和语言不变\n"
-                "3. 口语处理：保留自然口语与重复表达，不要删减内容，仅添加必要标点\n"
-                "4. **绝对不要改变人称代词（I/我、you/你等）和说话者视角**\n"
-                "5. 专名纠偏需有上下文把握；不确定时保留原转写，宁可少改\n\n"
-                "**分段规则：**\n"
-                "- 按主题和逻辑含义分段，每段包含1-8个相关句子\n"
-                "- 单段长度不超过400字符\n"
-                "- 避免过多的短段落，合并相关内容\n\n"
-                f"{output_rules_zh}\n"
-                f"{domain_block}\n"
-                f"原始转录文本：\n{chunk_text}"
-            )
-            system_prompt = (
-                "你是专业的音频转录文本优化助手，修正错误、改善通顺度和排版格式，"
-                "必须保持原意，不得删减口语/重复/细节；仅移除时间戳或元信息。"
-                "绝对不要改变人称代词或说话者视角。这可能是访谈对话，访谈者用'you'，被访者用'I/we'。"
-                "根据领域约束识别可能的同音误识专名，但输出只能是转录正文，不得包含任何过程说明。"
-            )
-        else:
-            prompt = (
-                "Please intelligently optimize and format the following audio transcript text:\n\n"
-                "Content Optimization (Accuracy First):\n"
-                "1. Error Correction (typos, homophones, proper nouns), especially mixed-language tech terms and names\n"
-                "2. Moderate grammar improvement, complete incomplete sentences, keep original language/meaning\n"
-                "3. Speech processing: keep natural fillers and repetitions, do NOT remove content; only add punctuation if needed\n"
-                "4. **NEVER change pronouns (I, you, he, she, etc.) or speaker perspective**\n"
-                "5. Correct proper nouns only when context is clear; when unsure, keep the original wording\n\n"
-                "Segmentation Rules: Group 1-8 related sentences per paragraph by topic/logic; paragraph length NOT exceed 400 characters; avoid too many short paragraphs\n\n"
-                f"{output_rules_en}\n"
-                f"{domain_block}\n"
-                f"Original transcript text:\n{chunk_text}"
-            )
-            system_prompt = (
-                "You are a professional transcript formatting assistant. Fix errors and improve fluency "
-                "without changing meaning or removing any content; only timestamps/meta may be removed. "
-                "NEVER change pronouns or speaker perspective. This may be an interview: interviewer uses 'you', interviewee uses 'I/we'. "
-                "Use domain constraints to fix likely misheard terms, but output ONLY the transcript body with no process commentary."
-            )
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ]
+        messages = prompt.render(domain_block=domain_block, chunk_text=chunk_text)
         try:
             response = self._chat_optimize_with_schema(messages)
             choice = response.choices[0]
@@ -713,35 +639,12 @@ class Summarizer:
             preview_limit = 50000
             preview = transcript[:preview_limit] if len(transcript) > preview_limit else transcript
 
-            step1_system = f"""你是一个精通内容提炼的编辑专家。你的任务是**阅读以下内容，然后为该内容专门设计一套最佳的摘要生成指令（Prompt）**。
-
-你需要判断内容的类型、风格、节奏、信息密度和关键维度，然后写出一个能让后续LLM精准执行摘要的定制化Prompt。
-
-要点：
-- 判断内容类型（技术教程/访谈对话/新闻评论/学术讲座/产品发布/故事叙事等）
-- 思考这类内容最需要提取什么信息（核心论点？关键数据？操作步骤？观点碰撞？）
-- 设计摘要结构（bullet points？分段叙述？表格对比？）
-- 指定摘要的目标读者、语气、深度
-- 输出语言：{language_name}
-
-**输出格式**：直接输出一段完整的摘要Prompt，用第一人称对"摘要执行者"说话。不要加"以下是定制Prompt："等前缀。"""
-
-            step1_user = f"""请阅读以下内容，然后为该内容设计一个量身定制的摘要生成Prompt：
-
----
-{preview}
----
-
-请输出定制化的摘要Prompt（用{language_name}）："""
-
+            step1 = summary_prompts.TWO_STEP_1
             resp1 = self.client.chat.completions.create(
                 model=self.advanced_model,
-                messages=[
-                    {"role": "system", "content": step1_system},
-                    {"role": "user", "content": step1_user},
-                ],
-                max_tokens=2000,
-                temperature=0.3,
+                messages=step1.render(language_name=language_name, preview=preview),
+                max_tokens=step1.max_tokens,
+                temperature=step1.temperature,
             )
             custom_prompt = strip_llm_artifacts(resp1.choices[0].message.content or "")
             logger.info(f"双步摘要 Step 1 完成，Prompt长度: {len(custom_prompt)}")
@@ -753,26 +656,16 @@ class Summarizer:
             # streaming 只影响返回方式，不影响这里的上下文容量。
             transcript_for_summary = transcript
 
-            step2_system = f"""{custom_prompt}
-
-硬性规则：
-- 输出语言：{language_name}
-- 不要复述完整原文，不要写长篇逐句重写
-- Markdown格式：段落间空行分隔；可选用小标题
-- 把最终摘要放在 <summary> 和 </summary> 标签之间；标签之外不要输出任何字符（前言、客套尾注等一律不要）"""
-
-            step2_user = f"""请根据系统提示词，直接总结以下原文内容：
-
-{transcript_for_summary}"""
-
+            step2 = summary_prompts.TWO_STEP_2
             resp2 = self.client.chat.completions.create(
                 model=self.advanced_model,
-                messages=[
-                    {"role": "system", "content": step2_system},
-                    {"role": "user", "content": step2_user},
-                ],
-                max_tokens=2200,
-                temperature=0.25,
+                messages=step2.render(
+                    custom_prompt=custom_prompt,
+                    language_name=language_name,
+                    transcript_for_summary=transcript_for_summary,
+                ),
+                max_tokens=step2.max_tokens,
+                temperature=step2.temperature,
             )
             summary = extract_tagged(resp2.choices[0].message.content or "", "summary")
             logger.info(f"双步摘要 Step 2 完成，摘要长度: {len(summary)}")
@@ -802,32 +695,15 @@ class Summarizer:
         # 获取目标语言名称
         language_name = self.language_map.get(target_language, "中文（简体）")
         
-        # 构建英文提示词，适用于所有目标语言
-        system_prompt = f"""You are an expert editor. Write a concise EXECUTIVE SUMMARY in {language_name} of the following material.
-
-Hard rules:
-- Length: about 180–450 words in {language_name} (use the lower end if the source is short). Never reproduce long verbatim quotes or extended sentence-by-sentence rewrites of the transcript.
-- Content: main thesis, 3–7 key takeaways, important conclusions, and critical facts or numbers only. Tight prose; short bullet lists are OK for takeaways.
-- Do NOT restate the full transcript, do NOT add preamble ("Here is…"), and do NOT add closings such as offers to revise or "let me know if…" / 客套尾注.
-- Markdown: optional `## Key takeaways` then paragraphs; avoid decorative filler headings.
-
-Wrap the final summary between <summary> and </summary> tags. Output NOTHING outside the tags (no preamble, no closings). Write the summary in {language_name}."""
-
-        user_prompt = f"""Summarize the following content in {language_name}. Follow the system rules strictly (brief executive summary, no meta-commentary):
-
-{transcript}"""
-
         logger.info(f"正在生成{language_name}摘要...")
-        
+
         # 调用OpenAI API
+        prompt = summary_prompts.SINGLE
         response = self.client.chat.completions.create(
             model=self.advanced_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            max_tokens=2200,
-            temperature=0.25
+            messages=prompt.render(language_name=language_name, transcript=transcript),
+            max_tokens=prompt.max_tokens,
+            temperature=prompt.temperature,
         )
         
         summary = extract_tagged(response.choices[0].message.content or "", "summary")
@@ -856,30 +732,18 @@ Wrap the final summary between <summary> and </summary> tags. Output NOTHING out
         for i, chunk in enumerate(chunks):
             logger.info(f"正在摘要第 {i+1}/{len(chunks)} 块...")
             
-            system_prompt = f"""You are a summarization expert. Write a brief section summary in {language_name}.
-
-This is part {i+1} of {len(chunks)} of the full transcript.
-
-Rules:
-- About 80–160 words in {language_name}; bullets OK for key points.
-- Do not echo the transcript verbatim; capture only new information in this segment.
-- Wrap the section summary between <summary> and </summary> tags; output nothing outside the tags."""
-
-            user_prompt = f"""[Part {i+1}/{len(chunks)}] Summarize in {language_name} (80–160 words, tight prose):
-
-{chunk}
-
-Put the summary inside <summary>...</summary>."""
-
+            prompt = summary_prompts.CHUNK
             try:
                 response = self.client.chat.completions.create(
                     model=self.advanced_model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    max_tokens=600,
-                    temperature=0.25
+                    messages=prompt.render(
+                        language_name=language_name,
+                        part=i + 1,
+                        total=len(chunks),
+                        chunk=chunk,
+                    ),
+                    max_tokens=prompt.max_tokens,
+                    temperature=prompt.temperature,
                 )
                 
                 chunk_summary = extract_tagged(response.choices[0].message.content or "", "summary")
@@ -958,25 +822,15 @@ Put the summary inside <summary>...</summary>."""
         language_name = self.language_map.get(target_language, "中文（简体）")
         
         try:
-            system_prompt = f"""You integrate partial summaries into ONE concise executive summary in {language_name}.
-
-Rules:
-- Total length about 280–650 words in {language_name}; remove duplication, do not expand into a transcript-length rewrite.
-- Markdown: paragraphs separated by blank lines; optional `## Key takeaways` only if it adds clarity.
-- Wrap the final summary between <summary> and </summary> tags; output nothing outside the tags."""
-
-            user_prompt = f"""Merge the following partial summaries into one executive summary in {language_name}:
-
-{combined_summaries}"""
-
+            prompt = summary_prompts.INTEGRATE
             response = self.client.chat.completions.create(
                 model=self.advanced_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=2200,
-                temperature=0.25
+                messages=prompt.render(
+                    language_name=language_name,
+                    combined_summaries=combined_summaries,
+                ),
+                max_tokens=prompt.max_tokens,
+                temperature=prompt.temperature,
             )
 
             integrated = extract_tagged(response.choices[0].message.content or "", "summary")

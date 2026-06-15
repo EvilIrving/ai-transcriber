@@ -131,6 +131,26 @@ To open the development UI in a standalone Chrome app window on macOS:
 open -na "Google Chrome" --args --app="http://localhost:5173"
 ```
 
+### Testing
+
+Both the backend (pytest) and frontend (Vitest) have unit test suites.
+
+```bash
+# Everything (backend + frontend)
+pnpm test
+
+# Backend only — pytest (install dev deps first)
+pip install -r requirements-dev.txt
+pnpm test:api
+
+# Frontend only — Vitest (jsdom + Testing Library)
+pnpm test:web            # one-shot
+cd frontend && pnpm test:watch   # watch mode
+```
+
+LLM-facing output (transcript optimization, summaries, translation) is constrained with
+structured/tagged output and covered by unit tests, so this behaviour does not need manual checking.
+
 ## 📖 Usage Guide
 
 1. **Choose input — URL or file**

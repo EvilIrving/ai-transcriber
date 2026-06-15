@@ -21,6 +21,7 @@ AI Transcriber transforms video/audio/podcast links (30+ platforms via yt-dlp) a
 │  task_store.py    ── Task state, SSE broadcast, DB calls  │
 │  db.py            ── SQLite persistence (asyncio.to_thread)│
 │  cancellation.py  ── Task cancellation + orphan cleanup   │
+│  prompts/         ── Layered role-based LLM prompts        │
 │  summarizer.py    ── LLM summary + two-step               │
 │  transcriber.py   ── Faster-Whisper (CTranslate2)         │
 │  whisper_models.py ── Model catalog/download/cache        │
@@ -66,6 +67,7 @@ ai-transcriber/
 │   ├── main.py        # Entry point: FastAPI app
 │   ├── routers/       # HTTP route handlers (flat modules)
 │   ├── platforms/     # yt-dlp extractors per platform
+│   ├── prompts/       # Role-based layered LLM prompts
 │   └── ...
 ├── frontend/          # React SPA (Vite + TypeScript + Tailwind v4)
 │   ├── src/
@@ -140,6 +142,7 @@ cd backend && python -c "import main; print(len(main.app.routes))"
 8. **Whisper model strategy** — default is `large-v3-turbo` (CPU sweet spot, covers en/zh/ja/ko). `whisper_models.py` keeps `base` as the embedded offline fallback (`BUILTIN_MODEL`); the default downloads in the background on first launch (`ensure_default_model_async`) and `_resolve_available_size` gracefully falls back to `base` until it's ready. The default pipeline path calls `get_transcriber()` (re-resolves each task) rather than the frozen `transcriber` singleton.
 9. **yt-dlp is not version-frozen in packaged builds** — `yt_dlp_updater.py` keeps a writable copy ahead of the bundled one on `sys.path` and refreshes it from PyPI stable on a throttled (weekly) background schedule. Builds also `pip install -U yt-dlp`. Transparent to users; no exposed params.
 10. **FFmpeg/FFprobe via absolute paths** — `start.py` locates both binaries (bundled or PATH) and exports `AIT_FFMPEG` / `AIT_FFPROBE` / `AIT_FFMPEG_LOCATION`. `video_processor.py` passes `ffmpeg_location` to yt-dlp and runs ffmpeg/ffprobe through `_run_media_proc` (process group + cancel token + library-path cleanup + timeout, no `shell=True`). Never call `ffmpeg`/`ffprobe` by bare name relying on PATH.
+11. **Layered prompts** — LLM 提示词从各模块中抽离，存放于 `backend/prompts/`，采用角色化分层结构：`Role`（identity + directives + output_contract，渲染为 system 消息）→ `Prompt`（Role + task_layers + temperature/max_tokens）→ `render(**vars)` → OpenAI `messages`。角色名册集中声明于 `prompts/roles.py`；各阶段模块（`transcript.py` / `summary.py` / `translate.py`）只负责把角色绑定到任务层。调试：`AIT_PROMPT_DEBUG=1`（日志输出角色 + 参与层清单）/ `AIT_PROMPT_DUMP_DIR=<dir>`（落盘）。具体结构见 `backend/prompts/__init__.py` 文件头注释。
 
 ### Frontend Stack
 
@@ -243,16 +246,32 @@ Read `DESIGN.md` for the full visual system. Key points:
 
 ## Testing
 
-No formal test suite exists yet. Smoke tests:
+Both layers have unit test suites; run them with `pnpm test` (backend + frontend).
+
 ```bash
-# Backend import check
-cd backend && python -c "import main; print('OK')"
+# Everything
+pnpm test
 
-# Frontend typecheck + lint
-cd frontend && pnpm build   # includes tsc -b
+# Backend — pytest (tests in backend/tests/, config in backend/pytest.ini)
+pip install -r requirements-dev.txt    # pytest, pytest-asyncio
+pnpm test:api
 
-# E2E: dev server + manual browser test
-pnpm dev
+# Frontend — Vitest + jsdom + Testing Library (tests co-located as *.test.ts(x))
+pnpm test:web              # one-shot
+cd frontend && pnpm test:watch
+```
+
+Conventions:
+- **Backend** — flat imports (tests run from `backend/`), `asyncio_mode = auto` so `async def test_*` needs no decorator. Pure-logic helpers are tested directly; LLM call sites are tested via their parsing/extraction helpers (e.g. `extract_tagged`, `_extract_optimized_text`), not by hitting the network.
+- **Frontend** — `vitest.config.ts` (jsdom, `@` alias, `src/test/setup.ts`). Test pure modules (`lib/`, `features/**/Utils.ts`, `i18n/`) and hooks via `@testing-library/react`; mock `fetch` for the `lib/api.ts` network layer. The i18n test enforces key parity across all four languages.
+
+LLM-facing output (transcript optimization, summaries, translation) is constrained with structured/tagged output and covered by tests — no manual verification needed for that behaviour.
+
+Smoke checks still useful:
+```bash
+cd backend && python -c "import main; print(len(main.app.routes))"   # expect 27
+cd frontend && pnpm build   # tsc -b typecheck + production bundle
+pnpm dev                    # E2E: dev server + manual browser test
 ```
 
 ## Docker

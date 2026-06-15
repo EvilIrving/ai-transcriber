@@ -10,7 +10,9 @@
     "build": "cd frontend && pnpm install && pnpm build",
     "install:all": "cd frontend && pnpm install",
     "lint": "cd frontend && pnpm lint",
-    "test:api": "cd backend && ../venv/bin/python -m pytest"
+    "test:api": "cd backend && ../venv/bin/python -m pytest",
+    "test:web": "cd frontend && pnpm test",
+    "test": "pnpm test:api && pnpm test:web"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
