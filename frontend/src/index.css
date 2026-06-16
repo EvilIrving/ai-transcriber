@@ -324,6 +324,7 @@ body.list-page-active .route-page:not([hidden]) {
   animation: spin .6s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes logo-shimmer { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0% 0; } }
 
 /* ── Scrollbar ── */
 .main ::-webkit-scrollbar { width: 5px; }
