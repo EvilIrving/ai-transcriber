@@ -1,16 +1,13 @@
 import { DocumentTextRegular, TextAlignLeftRegular } from "@fluentui/react-icons"
 import { Badge } from "@/components/ui/badge"
 import { useI18n } from "@/i18n/I18nContext"
+import { translate } from "@/lib/utils"
 import type { ProgressState } from "./useTranscribe"
 
 export function ProgressPanel({ progress, onCancel }: { progress: ProgressState; onCancel?: () => void }) {
   const { t } = useI18n()
 
-  const tr = (key: string, fallback = '') => {
-    if (!key) return fallback
-    const value = t(key)
-    return typeof value === 'string' && value !== key ? value : fallback
-  }
+  const tr = (key: string, fallback = '') => translate(t, key, fallback)
   const stageLabel = (key: string) => tr(`stage.${key}.name`, key)
   const stageDetail = (key: string) => tr(`stage.${key}.detail`)
 

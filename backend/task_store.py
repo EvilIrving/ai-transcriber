@@ -233,17 +233,11 @@ async def refresh_task_view_state(task_id: str):
     )
 
 
-async def resolve_stage_index(task_id: str, stage) -> int:
+def _resolve_stage_index(stages: list, stage) -> int:
+    """在已加载的 stages 上解析阶段下标（避免重复读库）。"""
     if isinstance(stage, int):
         return stage
-    task = await _db_get_task(task_id)
-    if not task:
-        return -1
-    stages = task.get("stages", [])
-    for i, s in enumerate(stages):
-        if s["name"] == stage:
-            return i
-    return -1
+    return next((i for i, s in enumerate(stages) if s["name"] == stage), -1)
 
 
 async def set_task_stage(task_id: str, stage, stage_progress: float = 0):
@@ -251,7 +245,7 @@ async def set_task_stage(task_id: str, stage, stage_progress: float = 0):
     if not task:
         return
     stages = task.get("stages", [])
-    stage_index = await resolve_stage_index(task_id, stage)
+    stage_index = _resolve_stage_index(stages, stage)
     if not stages or stage_index < 0 or stage_index >= len(stages):
         return
 

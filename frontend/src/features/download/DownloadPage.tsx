@@ -16,7 +16,7 @@ import { api } from "@/lib/api"
 import type { ApiError, DownloadFormatsResponse, MediaFormat, TaskPayload } from "@/lib/types"
 import { useAutoDismissError } from "@/hooks/useAutoDismissError"
 import { useI18n } from "@/i18n/I18nContext"
-import { cn } from "@/lib/utils"
+import { cn, clampPct, translate } from "@/lib/utils"
 
 type DwnTab = "video" | "audio" | "subtitle"
 
@@ -30,12 +30,6 @@ function formatSize(bytes?: number): string {
     i++
   }
   return val.toFixed(i > 0 ? 1 : 0) + " " + units[i]
-}
-
-function clampPct(value: unknown): number {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return 0
-  return Math.max(0, Math.min(100, n))
 }
 
 export function DownloadPage() {
@@ -57,11 +51,7 @@ export function DownloadPage() {
   const pollTimerRef = useRef<number | null>(null)
   const taskIdRef = useRef<string | null>(null)
 
-  const tr = (key: string, fallback = '') => {
-    if (!key) return fallback
-    const value = t(key)
-    return typeof value === 'string' && value !== key ? value : fallback
-  }
+  const tr = (key: string, fallback = '') => translate(t, key, fallback)
 
   const stopPolling = () => {
     if (pollTimerRef.current !== null) {

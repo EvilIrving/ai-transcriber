@@ -52,6 +52,66 @@ async def _llm_call(fn, *args, llm_timeout: float = 300.0, task_name: str = ""):
         )
 
 
+async def _invoke_summary(
+    request_summarizer: Summarizer,
+    summary_source: str,
+    summary_language: str,
+    video_title: str,
+    use_two_step: bool,
+    llm_timeout: float,
+) -> tuple[str, str]:
+    """调用摘要 LLM（两步/单步），返回 (summary, prompt_content)。
+
+    两条产线（首次转录 / 重新生成）共用同一分支逻辑，避免两处复制后不一致。
+    """
+    if use_two_step:
+        result = await _llm_call(
+            request_summarizer.summary_two_step,
+            summary_source, summary_language, video_title,
+            llm_timeout=llm_timeout, task_name="summary_two_step",
+        )
+        return result["summary"], result.get("prompt", "")
+    summary = await _llm_call(
+        request_summarizer.summarize,
+        summary_source, summary_language, video_title,
+        llm_timeout=llm_timeout, task_name="summarize",
+    )
+    return summary, "(单步固定prompt模式)"
+
+
+async def _persist_summary(
+    request_summarizer: Summarizer,
+    summary: str,
+    summary_prompt_content: str,
+    summary_source: str,
+    summary_language: str,
+    video_title: str,
+    source_ref: str,
+    safe_title: str,
+    short_id: str,
+) -> tuple[str, str, Path]:
+    """空摘要兜底 + 落盘 summary_/summary-prompt_ 两个文件。
+
+    返回 (summary_with_source, prompt_filename, summary_path)。两条产线共用。
+    """
+    if not (summary or "").strip():
+        logger.warning("摘要为空，使用备用摘要")
+        summary = request_summarizer._generate_fallback_summary(
+            summary_source, summary_language, video_title
+        )
+    summary_with_source = summary + f"\n\nsource: {source_ref}\n"
+
+    summary_filename = f"summary_{safe_title}_{short_id}.md"
+    summary_path = TEMP_DIR / summary_filename
+    prompt_filename = f"summary-prompt_{safe_title}_{short_id}.md"
+    prompt_path = TEMP_DIR / prompt_filename
+    async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
+        await f.write(summary_with_source)
+    async with aiofiles.open(prompt_path, "w", encoding="utf-8") as f:
+        await f.write(f"# 摘要Prompt\n\n{summary_prompt_content}\n")
+    return summary_with_source, prompt_filename, summary_path
+
+
 _AUDIO_ONLY_EXTENSIONS = {'.mp3', '.m4a', '.wav', '.flac', '.ogg', '.opus', '.aac', '.wma', '.weba'}
 _AUDIO_MIME_PREFIXES = ('audio/',)
 
@@ -171,51 +231,22 @@ async def run_post_extract_pipeline(
     )
 
     # ── 生成摘要prompt + 生成摘要 ────────────────────────
-    summary_prompt_content = ""
+    summary_task = asyncio.create_task(
+        _invoke_summary(request_summarizer, summary_source, summary_language,
+                        video_title, use_two_step, llm_timeout)
+    )
+    await _broadcast_stage(task_id, "read_content", 100)
     if use_two_step:
-        summary_task = asyncio.create_task(
-            _llm_call(
-                request_summarizer.summary_two_step,
-                summary_source, summary_language, video_title,
-                llm_timeout=llm_timeout, task_name="summary_two_step",
-            )
-        )
-        await _broadcast_stage(task_id, "read_content", 100)
         await _broadcast_stage(task_id, "gen_summary_prompt", 30)
-        two_step_result = await summary_task
-        summary = two_step_result["summary"]
-        summary_prompt_content = two_step_result.get("prompt", "")
     else:
-        summary_task = asyncio.create_task(
-            _llm_call(
-                request_summarizer.summarize,
-                summary_source, summary_language, video_title,
-                llm_timeout=llm_timeout, task_name="summarize",
-            )
-        )
-        await _broadcast_stage(task_id, "read_content", 100)
         await _broadcast_stage(task_id, "gen_summary_prompt", 100)
         await _broadcast_stage(task_id, "gen_summary", 50)
-        summary = await summary_task
-        summary_prompt_content = "(单步固定prompt模式)"
+    summary, summary_prompt_content = await summary_task
 
-    if not (summary or "").strip():
-        logger.warning("摘要为空，使用备用摘要")
-        summary = request_summarizer._generate_fallback_summary(
-            summary_source, summary_language, video_title
-        )
-
-    summary_with_source = summary + f"\n\nsource: {source_ref}\n"
-
-    summary_filename = f"summary_{safe_title}_{short_id}.md"
-    summary_path = TEMP_DIR / summary_filename
-    async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
-        await f.write(summary_with_source)
-
-    prompt_filename = f"summary-prompt_{safe_title}_{short_id}.md"
-    prompt_path = TEMP_DIR / prompt_filename
-    async with aiofiles.open(prompt_path, "w", encoding="utf-8") as f:
-        await f.write(f"# 摘要Prompt\n\n{summary_prompt_content}\n")
+    summary_with_source, prompt_filename, summary_path = await _persist_summary(
+        request_summarizer, summary, summary_prompt_content, summary_source,
+        summary_language, video_title, source_ref, safe_title, short_id,
+    )
 
     await _update_task(task_id,
         message="task.summary_ready_optimizing",
@@ -319,39 +350,15 @@ async def regenerate_summary(
         await _broadcast_stage(task_id, "read_content", 100)
         await _broadcast_stage(task_id, "gen_summary_prompt", 30)
 
-        if use_two_step:
-            two_step_result = await _llm_call(
-                request_summarizer.summary_two_step,
-                summary_source, summary_language, video_title,
-                llm_timeout=llm_timeout, task_name="summary_two_step",
-            )
-            summary = two_step_result["summary"]
-            summary_prompt_content = two_step_result.get("prompt", "")
-        else:
-            summary = await _llm_call(
-                request_summarizer.summarize,
-                summary_source, summary_language, video_title,
-                llm_timeout=llm_timeout, task_name="summarize",
-            )
-            summary_prompt_content = "(单步固定prompt模式)"
+        summary, summary_prompt_content = await _invoke_summary(
+            request_summarizer, summary_source, summary_language,
+            video_title, use_two_step, llm_timeout,
+        )
 
-        if not (summary or "").strip():
-            logger.warning("重新生成摘要为空，使用备用摘要")
-            summary = request_summarizer._generate_fallback_summary(
-                summary_source, summary_language, video_title
-            )
-
-        summary_with_source = summary + f"\n\nsource: {source_ref}\n"
-
-        summary_filename = f"summary_{safe_title}_{short_id}.md"
-        summary_path = TEMP_DIR / summary_filename
-        async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
-            await f.write(summary_with_source)
-
-        prompt_filename = f"summary-prompt_{safe_title}_{short_id}.md"
-        prompt_path = TEMP_DIR / prompt_filename
-        async with aiofiles.open(prompt_path, "w", encoding="utf-8") as f:
-            await f.write(f"# 摘要Prompt\n\n{summary_prompt_content}\n")
+        summary_with_source, prompt_filename, summary_path = await _persist_summary(
+            request_summarizer, summary, summary_prompt_content, summary_source,
+            summary_language, video_title, source_ref, safe_title, short_id,
+        )
 
         await _update_task(task_id,
             status="completed",

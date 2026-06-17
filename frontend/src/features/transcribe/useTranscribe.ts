@@ -4,6 +4,7 @@ import { renderMarkdown } from '@/lib/markdown'
 import type { ApiError, QueueItem, QueueState, ResultItem, StageItem, TaskPayload } from '@/lib/types'
 import { useI18n } from '@/i18n/I18nContext'
 import { useSettings } from '@/context/SettingsContext'
+import { clampPct, translate } from '@/lib/utils'
 
 export type ResultTab = 'script' | 'summary' | 'translation'
 
@@ -50,12 +51,6 @@ const STATUS_RANK: Record<string, number> = {
 }
 const statusRank = (s?: string): number => STATUS_RANK[s ?? ''] ?? 0
 
-function clampPct(value: unknown): number {
-  const n = Number(value)
-  if (!Number.isFinite(n)) return 0
-  return Math.max(0, Math.min(100, n))
-}
-
 function normLangTab(code?: string): string {
   if (!code) return ''
   const c = String(code).toLowerCase().trim()
@@ -64,11 +59,7 @@ function normLangTab(code?: string): string {
   return c
 }
 
-function tr(t: (key: string) => unknown, key: string, fallback = ''): string {
-  if (!key) return fallback
-  const value = t(key)
-  return typeof value === 'string' && value !== key ? value : fallback
-}
+const tr = translate
 
 function resolveTaskError(t: (key: string) => unknown, task: TaskPayload): string {
   if (task.error_code) {
