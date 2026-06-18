@@ -223,7 +223,7 @@ export function useTranscribe() {
     }))
   }, [t])
 
-  const applyTaskDetail = useCallback((task: TaskPayload, preferredTab: ResultTab = 'script') => {
+  const applyTaskDetail = useCallback((task: TaskPayload, preferredTab: ResultTab = 'summary') => {
     updateProgressFromTask(task)
     if (task.status === 'completed') {
       markProcessingTerminal(task.task_id, 'completed')
@@ -249,7 +249,7 @@ export function useTranscribe() {
     }
   }, [markProcessingTerminal, showError, showPartialSummary, showResults, t, updateProgressFromTask])
 
-  const fetchTaskDetail = useCallback(async (taskId: string, preferredTab: ResultTab = 'script') => {
+  const fetchTaskDetail = useCallback(async (taskId: string, preferredTab: ResultTab = 'summary') => {
     const seq = ++detailRequestSeqRef.current
     try {
       const task = await api.taskDetail(taskId)
@@ -296,14 +296,19 @@ export function useTranscribe() {
     }
     if (displayedId === detailIdRef.current) return
 
+    const keepDetailMounted = phase !== 'empty'
     detailIdRef.current = displayedId
     partialShownRef.current = false
-    setProgress(EMPTY_PROGRESS)
-    setResults(EMPTY_RESULTS)
     setError('')
-    setPhase('progress')
+    if (!keepDetailMounted) {
+      setProgress(EMPTY_PROGRESS)
+      setResults(EMPTY_RESULTS)
+      setPhase('progress')
+    } else if (phase === 'progress') {
+      setProgress(EMPTY_PROGRESS)
+    }
     void fetchTaskDetail(displayedId)
-  }, [displayedId, fetchTaskDetail])
+  }, [displayedId, fetchTaskDetail, phase])
 
   // ── 运行中详情：队列 processing 项负责进度；ready/终态翻转时按需拉正文 ──
   useEffect(() => {
@@ -313,7 +318,7 @@ export function useTranscribe() {
     const status = processing.task_status || processing.status
     if (status === 'completed') {
       setSelectedTaskId(displayedId)
-      void fetchTaskDetail(displayedId, partialShownRef.current ? 'summary' : 'script')
+      void fetchTaskDetail(displayedId, 'summary')
       return
     }
     if (status === 'error' || status === 'cancelled') {
@@ -322,7 +327,7 @@ export function useTranscribe() {
       return
     }
     if (processing.transcript_ready) {
-      void fetchTaskDetail(displayedId, partialShownRef.current ? 'summary' : 'script')
+      void fetchTaskDetail(displayedId, 'summary')
     } else if (processing.summary_ready && !partialShownRef.current) {
       void fetchTaskDetail(displayedId, 'summary')
     }

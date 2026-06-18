@@ -1,8 +1,6 @@
-import { useEffect, useRef, useState } from "react"
-import { ChevronDownRegular, ListRegular } from "@fluentui/react-icons"
+import { ListRegular } from "@fluentui/react-icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { useI18n } from "@/i18n/I18nContext"
 import { cn } from "@/lib/utils"
 import type { QueueItem } from "@/lib/types"
@@ -31,13 +29,6 @@ export function QueuePanel({
   onClear: () => void
 }) {
   const { t } = useI18n()
-  const [open, setOpen] = useState(items.length > 0)
-  const previousCountRef = useRef(items.length)
-
-  useEffect(() => {
-    if (previousCountRef.current === 0 && items.length > 0) setOpen(true)
-    previousCountRef.current = items.length
-  }, [items.length])
 
   const statusMeta = (status: string): { label: string; variant: "secondary" | "success" | "default"; cls?: string } => {
     switch (status) {
@@ -52,22 +43,13 @@ export function QueuePanel({
   const hasTerminal = items.some((i) => TERMINAL.has(i.status))
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="queue-panel">
+    <div className="queue-panel">
       <div className="queue-head">
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="queue-head-toggle"
-            aria-label={open ? (t("queue_collapse") as string) : (t("queue_expand") as string)}
-          >
-            <ChevronDownRegular className={cn("queue-chevron", !open && "queue-chevron-closed")} />
-            <span className="queue-title">
-              <ListRegular className="h-4 w-4" />
-              {t("queue_title")}
-              {items.length > 0 && <span className="queue-count">{items.length}</span>}
-            </span>
-          </button>
-        </CollapsibleTrigger>
+        <span className="queue-title">
+          <ListRegular className="h-4 w-4" />
+          {t("queue_title")}
+          {items.length > 0 && <span className="queue-count">{items.length}</span>}
+        </span>
         {hasTerminal && (
           <Button variant="ghost" size="sm" onClick={onClear}>
             {t("queue_clear_done")}
@@ -75,7 +57,7 @@ export function QueuePanel({
         )}
       </div>
 
-      <CollapsibleContent className="queue-body">
+      <div className="queue-body">
         {items.length === 0 ? (
           <div className="queue-empty">{t("queue_empty")}</div>
         ) : (
@@ -139,7 +121,7 @@ export function QueuePanel({
             })}
           </div>
         )}
-      </CollapsibleContent>
-    </Collapsible>
+      </div>
+    </div>
   )
 }

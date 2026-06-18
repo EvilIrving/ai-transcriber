@@ -38,111 +38,110 @@ export function TranscribePage() {
     const item = tr.items.find((i) => i.task_id === tr.displayedTaskId)
     if (item) void tr.cancelItem(item)
   }
+  const hasDetail = tr.phase !== "empty"
 
   return (
-    <div className="transcribe-page">
-      <div className="page-topbar">
-        <div className="page-topbar-left">
-          <h1 className="page-topbar-title">{t("title")}</h1>
-          <span className="page-topbar-sub">{t("subtitle")}</span>
-        </div>
-      </div>
-
-      <form onSubmit={submit} autoComplete="off" noValidate>
-        <div className="input-row">
-          <div className="url-wrap">
-            <LinkRegular className="url-icon h-4 w-4" />
-            <Input
-              type="url"
-              className="url-input"
-              placeholder={t("video_url_placeholder")}
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                  e.preventDefault()
-                  void doSubmit()
-                }
-              }}
-            />
+    <div className={`transcribe-page${hasDetail ? " transcribe-page-detail" : ""}`}>
+      <div className="transcribe-list">
+        <div className="page-topbar">
+          <div className="page-topbar-left">
+            <h1 className="page-topbar-title">{t("title")}</h1>
+            <span className="page-topbar-sub">{t("subtitle")}</span>
           </div>
-          <Button type="submit" variant="default" size="sm" className="shrink-0 w-[140px]">
-            {t("start_transcription")}
-          </Button>
         </div>
-      </form>
 
-      <div className="upload-section">
-        <div
-          className={`upload-zone${dragover ? " dragover" : ""}`}
-          tabIndex={0}
-          role="button"
-          aria-label={t("upload_files_btn")}
-          onClick={() => fileRef.current?.click()}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") fileRef.current?.click()
-          }}
-          onDragOver={(e) => {
-            e.preventDefault()
-            setDragover(true)
-          }}
-          onDragLeave={() => setDragover(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setDragover(false)
-            onFiles(e.dataTransfer.files)
-          }}
-        >
-          <p className="upload-or">{t("upload_or")}</p>
-          <p className="upload-formats">{t("upload_formats")}</p>
-          <Button type="button" variant="outline" className="gap-2">
-            <ArrowUploadRegular className="h-3.5 w-3.5" />
-            {t("upload_files_btn")}
-          </Button>
+        <form onSubmit={submit} autoComplete="off" noValidate>
+          <div className="input-row">
+            <div className="url-wrap">
+              <LinkRegular className="url-icon h-4 w-4" />
+              <Input
+                type="url"
+                className="url-input"
+                placeholder={t("video_url_placeholder")}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault()
+                    void doSubmit()
+                  }
+                }}
+              />
+            </div>
+            <Button type="submit" variant="default" size="sm" className="shrink-0 w-[140px]">
+              {t("start_transcription")}
+            </Button>
+          </div>
+        </form>
+
+        <div className="upload-section">
+          <div
+            className={`upload-zone${dragover ? " dragover" : ""}`}
+            tabIndex={0}
+            role="button"
+            aria-label={t("upload_files_btn")}
+            onClick={() => fileRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") fileRef.current?.click()
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDragover(true)
+            }}
+            onDragLeave={() => setDragover(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragover(false)
+              onFiles(e.dataTransfer.files)
+            }}
+          >
+            <p className="upload-or">{t("upload_or")}</p>
+            <p className="upload-formats">{t("upload_formats")}</p>
+            <Button type="button" variant="outline" className="gap-2">
+              <ArrowUploadRegular className="h-3.5 w-3.5" />
+              {t("upload_files_btn")}
+            </Button>
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={UPLOAD_ACCEPT}
+            hidden
+            onChange={(e) => onFiles(e.target.files)}
+          />
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={UPLOAD_ACCEPT}
-          hidden
-          onChange={(e) => onFiles(e.target.files)}
+
+        <ErrorBanner msg={tr.error} />
+
+        <SettingsBar />
+
+        <QueuePanel
+          items={tr.items}
+          displayedTaskId={tr.displayedTaskId}
+          cancellingIds={tr.cancellingIds}
+          onSelect={tr.selectItem}
+          onCancel={tr.cancelItem}
+          onRemove={tr.removeItem}
+          onClear={tr.clearCompleted}
         />
       </div>
 
-      <ErrorBanner msg={tr.error} />
-
-      <SettingsBar />
-
-      <QueuePanel
-        items={tr.items}
-        displayedTaskId={tr.displayedTaskId}
-        cancellingIds={tr.cancellingIds}
-        onSelect={tr.selectItem}
-        onCancel={tr.cancelItem}
-        onRemove={tr.removeItem}
-        onClear={tr.clearCompleted}
-      />
-
-      <div className="result-panel">
-        {tr.phase === "empty" && (
-          <div className="empty-state">
-            <span className="es-icon">
-              <LinkRegular className="h-9 w-9 text-[var(--text-dim)]" />
-            </span>
-            <span className="es-text">{t("empty_hint")}</span>
+      {hasDetail && (
+        <div className="transcribe-detail">
+          <div className="result-panel">
+            {tr.phase === "progress" && <ProgressPanel progress={tr.progress} onCancel={cancelDisplayed} />}
+            {tr.phase === "results" && (
+              <ResultsPanel
+                results={tr.results}
+                isProcessing={tr.isProcessing}
+                onTab={tr.setActiveTab}
+                onExport={() => void tr.exportContent()}
+                onRetry={() => void tr.retryTranscription()}
+              />
+            )}
           </div>
-        )}
-        {tr.phase === "progress" && <ProgressPanel progress={tr.progress} onCancel={cancelDisplayed} />}
-        {tr.phase === "results" && (
-          <ResultsPanel
-            results={tr.results}
-            isProcessing={tr.isProcessing}
-            onTab={tr.setActiveTab}
-            onExport={() => void tr.exportContent()}
-            onRetry={() => void tr.retryTranscription()}
-          />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

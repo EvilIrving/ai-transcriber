@@ -110,7 +110,7 @@ export function SettingsBar() {
       {/* Collapsible settings panel */}
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleContent className="overflow-hidden data-[state=open]:animate-in data-[state=open]:slide-in-from-top-2 data-[state=closed]:animate-out data-[state=closed]:slide-out-to-top-2 mt-2.5">
-          <div className="rounded-lg border border-[var(--border-color)] bg-[var(--surface)] p-4">
+          <div className="settings-panel rounded-lg border border-[var(--border-color)] bg-[var(--surface)] p-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
                 <Label className="s-label">{t("model_base_url")}</Label>

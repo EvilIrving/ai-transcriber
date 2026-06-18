@@ -49,8 +49,8 @@ export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry }
   }
 
   const tabs = [
-    { value: "script" as ResultTab, label: t("transcript_text"), hidden: false },
     { value: "summary" as ResultTab, label: t("intelligent_summary"), hidden: false },
+    { value: "script" as ResultTab, label: t("transcript_text"), hidden: false },
     {
       value: "translation" as ResultTab,
       label: t("translation"),
@@ -109,18 +109,18 @@ export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry }
           </div>
         </div>
 
-        <TabsContent value="script" className="result-content-pane mt-0 px-5 pb-6">
-          <div
-            className="md-content py-4"
-            ref={scriptRef}
-            dangerouslySetInnerHTML={{ __html: results.scriptHtml }}
-          />
-        </TabsContent>
         <TabsContent value="summary" className="result-content-pane mt-0 px-5 pb-6">
           <div
             className="md-content py-4"
             ref={summaryRef}
             dangerouslySetInnerHTML={{ __html: results.summaryHtml }}
+          />
+        </TabsContent>
+        <TabsContent value="script" className="result-content-pane mt-0 px-5 pb-6">
+          <div
+            className="md-content py-4"
+            ref={scriptRef}
+            dangerouslySetInnerHTML={{ __html: results.scriptHtml }}
           />
         </TabsContent>
         <TabsContent value="translation" className="result-content-pane mt-0 px-5 pb-6">
