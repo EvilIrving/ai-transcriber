@@ -5,8 +5,9 @@ import {
   feedSummaries,
   rememberFeedMeta,
   forgetFeedMeta,
+  sortEntriesByPublished,
 } from './rssUtils'
-import type { RssFeed } from '@/lib/types'
+import type { RssEntry, RssFeed } from '@/lib/types'
 
 const INVALID = 'invalid'
 
@@ -70,6 +71,43 @@ describe('feedSummaries', () => {
     expect(s.entry_count).toBe(0)
     expect(s.new_count).toBe(0)
     expect(s.favorite).toBe(false)
+  })
+})
+
+describe('sortEntriesByPublished', () => {
+  it('orders RFC822 (RSS pubDate) entries newest-first', () => {
+    const entries: RssEntry[] = [
+      { id: 'old', published: 'Wed, 01 Jan 2025 10:00:00 GMT' },
+      { id: 'new', published: 'Thu, 18 Jun 2026 10:00:00 GMT' },
+      { id: 'mid', published: 'Mon, 01 Jun 2026 10:00:00 GMT' },
+    ]
+    expect(sortEntriesByPublished(entries).map((e) => e.id)).toEqual(['new', 'mid', 'old'])
+  })
+
+  it('orders ISO8601 (Atom published/updated) entries newest-first', () => {
+    const entries: RssEntry[] = [
+      { id: 'old', published: '2025-01-01T10:00:00Z' },
+      { id: 'new', published: '2026-06-18T10:00:00Z' },
+    ]
+    expect(sortEntriesByPublished(entries).map((e) => e.id)).toEqual(['new', 'old'])
+  })
+
+  it('pushes entries with missing or unparseable dates to the end', () => {
+    const entries: RssEntry[] = [
+      { id: 'bad', published: 'not-a-date' },
+      { id: 'good', published: 'Thu, 18 Jun 2026 10:00:00 GMT' },
+      { id: 'empty' },
+    ]
+    expect(sortEntriesByPublished(entries).map((e) => e.id)).toEqual(['good', 'bad', 'empty'])
+  })
+
+  it('does not mutate the input array', () => {
+    const entries: RssEntry[] = [
+      { id: 'a', published: 'Wed, 01 Jan 2025 10:00:00 GMT' },
+      { id: 'b', published: 'Thu, 18 Jun 2026 10:00:00 GMT' },
+    ]
+    sortEntriesByPublished(entries)
+    expect(entries.map((e) => e.id)).toEqual(['a', 'b'])
   })
 })
 

@@ -1,4 +1,4 @@
-import type { RssFeed, RssFeedSummary } from '@/lib/types'
+import type { RssEntry, RssFeed, RssFeedSummary } from '@/lib/types'
 
 /* ── 工具函数 ────────────────────────────────────────────
    所有 RSS 数据管理（解析、合并、去重、持久化）由后端负责。
@@ -80,6 +80,19 @@ export function mergeFeedMetadata(feeds: RssFeed[]): RssFeed[] {
       region: feed.region || meta.region || '',
     }
   })
+}
+
+/* published 既可能是 RFC822（RSS pubDate）也可能是 ISO8601（Atom），
+   两者都不是字典序可比较的字符串，必须先解析成时间戳再比较。 */
+function publishedTime(entry: RssEntry): number {
+  const raw = (entry.published || '').trim()
+  if (!raw) return 0
+  const ts = Date.parse(raw)
+  return Number.isNaN(ts) ? 0 : ts
+}
+
+export function sortEntriesByPublished(entries: RssEntry[]): RssEntry[] {
+  return [...(entries || [])].sort((a, b) => publishedTime(b) - publishedTime(a))
 }
 
 export function feedSummaries(feeds: RssFeed[]): RssFeedSummary[] {

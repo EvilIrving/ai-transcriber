@@ -10,7 +10,7 @@ import { api } from "@/lib/api"
 import { useAutoDismissError } from "@/hooks/useAutoDismissError"
 import { useI18n } from "@/i18n/I18nContext"
 import { useSettings } from "@/context/SettingsContext"
-import { feedSummaries, normalizeImportList, mergeFeedMetadata, rememberFeedMeta, forgetFeedMeta } from "./rssUtils"
+import { feedSummaries, normalizeImportList, mergeFeedMetadata, rememberFeedMeta, forgetFeedMeta, sortEntriesByPublished } from "./rssUtils"
 import { cn } from "@/lib/utils"
 import type { ApiError, RssFeed } from "@/lib/types"
 
@@ -218,7 +218,7 @@ export function RssPage() {
 
   const activeEntries = useMemo(() => {
     if (!activeFeed) return []
-    return (activeFeed.entries || []).slice().sort((a, b) => (b.published || "").localeCompare(a.published || ""))
+    return sortEntriesByPublished(activeFeed.entries || [])
   }, [activeFeed])
 
   return (
