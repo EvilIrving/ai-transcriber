@@ -28,15 +28,20 @@ function Layout() {
   useGlobalShortcuts()
   const currentPath = isPagePath(location.pathname) ? location.pathname : '/transcribe'
   const isListPage = currentPath === '/rss' || currentPath === '/history'
+  const isFitPage = currentPath === '/transcribe' || isListPage
 
   useEffect(() => {
     if (!isPagePath(location.pathname)) navigate('/transcribe', { replace: true })
   }, [location.pathname, navigate])
 
   useEffect(() => {
+    document.body.classList.toggle('fit-page-active', isFitPage)
     document.body.classList.toggle('list-page-active', isListPage)
-    return () => document.body.classList.remove('list-page-active')
-  }, [isListPage])
+    return () => {
+      document.body.classList.remove('fit-page-active')
+      document.body.classList.remove('list-page-active')
+    }
+  }, [isFitPage, isListPage])
 
   return (
     <>

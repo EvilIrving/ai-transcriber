@@ -40,7 +40,7 @@ export function TranscribePage() {
   }
 
   return (
-    <div>
+    <div className="transcribe-page">
       <div className="page-topbar">
         <div className="page-topbar-left">
           <h1 className="page-topbar-title">{t("title")}</h1>

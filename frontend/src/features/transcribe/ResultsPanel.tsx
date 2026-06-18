@@ -1,5 +1,4 @@
 import { useRef, useState } from "react"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { CopyRegular, ArrowDownloadRegular, ArrowClockwiseRegular } from "@fluentui/react-icons"
@@ -60,13 +59,13 @@ export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry }
   ].filter((t) => !t.hidden)
 
   return (
-    <div className="px-0">
+    <div className="result-panel-inner">
       <Tabs
         value={results.activeTab}
         onValueChange={(v) => onTab(v as ResultTab)}
-        className="w-full"
+        className="result-tabs w-full"
       >
-        <div className="flex items-center px-4 pt-3 gap-2 flex-wrap">
+        <div className="result-tabs-head flex items-center px-4 pt-3 gap-2 flex-wrap">
           <TabsList className="border-b-0">
             {tabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value}>
@@ -110,32 +109,26 @@ export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry }
           </div>
         </div>
 
-        <TabsContent value="script" className="mt-0 px-5 pb-6">
-          <ScrollArea className="h-[520px]">
-            <div
-              className="md-content py-4"
-              ref={scriptRef}
-              dangerouslySetInnerHTML={{ __html: results.scriptHtml }}
-            />
-          </ScrollArea>
+        <TabsContent value="script" className="result-content-pane mt-0 px-5 pb-6">
+          <div
+            className="md-content py-4"
+            ref={scriptRef}
+            dangerouslySetInnerHTML={{ __html: results.scriptHtml }}
+          />
         </TabsContent>
-        <TabsContent value="summary" className="mt-0 px-5 pb-6">
-          <ScrollArea className="h-[520px]">
-            <div
-              className="md-content py-4"
-              ref={summaryRef}
-              dangerouslySetInnerHTML={{ __html: results.summaryHtml }}
-            />
-          </ScrollArea>
+        <TabsContent value="summary" className="result-content-pane mt-0 px-5 pb-6">
+          <div
+            className="md-content py-4"
+            ref={summaryRef}
+            dangerouslySetInnerHTML={{ __html: results.summaryHtml }}
+          />
         </TabsContent>
-        <TabsContent value="translation" className="mt-0 px-5 pb-6">
-          <ScrollArea className="h-[520px]">
-            <div
-              className="md-content py-4"
-              ref={translationRef}
-              dangerouslySetInnerHTML={{ __html: results.translationHtml }}
-            />
-          </ScrollArea>
+        <TabsContent value="translation" className="result-content-pane mt-0 px-5 pb-6">
+          <div
+            className="md-content py-4"
+            ref={translationRef}
+            dangerouslySetInnerHTML={{ __html: results.translationHtml }}
+          />
         </TabsContent>
       </Tabs>
     </div>
