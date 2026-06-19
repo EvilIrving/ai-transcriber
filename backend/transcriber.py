@@ -1,15 +1,53 @@
 import os
 import re
+import asyncio
 import threading
-from faster_whisper import WhisperModel
 import logging
+import concurrent.futures
 from typing import Optional
 
 import cancellation
 from cancellation import CancelledByUser
 from exceptions import TranscriptionError
+from video_processor import decode_audio_chunk, probe_duration
+from silero_vad import get_speech_timestamps, to_clip_timestamps
 
 logger = logging.getLogger(__name__)
+
+SAMPLE_RATE = 16000
+
+# MLX 的 Metal command encoder 是「线程亲和」的：GPU stream 在首次访问它的线程上创建并
+# 绑定 encoder，换一条线程再 eval 同一 stream 就抛 C++ 异常
+# "There is no Stream(gpu, N) in current thread" —— 该异常逃出 C++ 边界直接 abort()
+# 整个进程，Python 的 try/except 根本拦不住。asyncio.to_thread 用的是事件循环的共享线程池，
+# 相邻两次调用可能落在不同 worker 线程上（_load_model 在 A、下一个 _transcribe_chunk 在 B），
+# 于是必崩。所有 MLX 调用必须钉死在同一条线程：单 worker 执行器既保证线程亲和，又顺带把
+# 并发任务的 GPU 访问串行化（避免两个转录抢同一 stream）。
+_MLX_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="mlx-whisper"
+)
+
+
+async def _run_on_mlx_thread(fn, *args):
+    """在专用单线程执行器上执行 MLX 调用（线程亲和，原因见上方注释）。"""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_MLX_EXECUTOR, fn, *args)
+
+
+def run_on_mlx_thread_sync(fn, *args):
+    """同步地在专用 MLX 线程上执行（供非 async 的后台预热线程调用）。
+
+    必须与 transcribe() 共用同一执行器：预热若在自建线程上加载模型（首次触碰 GPU
+    即在该线程绑定 Metal command encoder），随后转录换到 _MLX_EXECUTOR 线程访问同一
+    stream 就会抛 "There is no Stream(gpu, N) in current thread" → abort 整个进程。
+    注意：勿在 _MLX_EXECUTOR 线程内部调用此函数（单 worker，会自等死锁）。
+    """
+    return _MLX_EXECUTOR.submit(fn, *args).result()
+
+# 定长分块解码的块长（秒）。mlx-whisper 一次性执行（非惰性生成器），取消只能在
+# 块边界生效；切成 10 分钟的块，兼顾「取消响应延迟」与「分块开销/上下文割裂」，
+# 并把解码内存约束在单块大小（长音频友好）。每块内部再做 Silero VAD。
+CHUNK_SECONDS = 600
 
 
 def parse_detected_language(transcript_text: Optional[str]) -> Optional[str]:
@@ -29,166 +67,209 @@ def parse_detected_language(transcript_text: Optional[str]) -> Optional[str]:
             return None
     return None
 
+
 class Transcriber:
-    """音频转录器，使用Faster-Whisper进行语音转文字"""
-    
-    def __init__(self, model_size: str = "base", download_root: Optional[str] = None):
+    """音频转录器，使用 mlx-whisper（Apple MLX）在 Apple Silicon 上跑 GPU + 统一内存。
+
+    底层引擎从 faster-whisper(CTranslate2，仅 CPU) 换成 mlx-whisper：同样的
+    large-v3-turbo 权重，但吃 Metal GPU，长音频提速约 8–10×。接口（async
+    ``transcribe`` + ``get_detected_language``）保持不变，满足 ASRBackend Protocol，
+    上层管线零改动。
+    """
+
+    def __init__(self, model_size: str = "base", model_path: Optional[str] = None):
         """
         初始化转录器
 
         Args:
-            model_size: Whisper模型大小 (tiny, base, small, medium, large)
-            download_root: 模型下载/缓存目录；None 时使用 faster-whisper 默认缓存
+            model_size: Whisper 模型大小 (base, small, medium, large-v3-turbo, large-v3)
+            model_path: mlx_whisper 的 path_or_hf_repo——本地模型目录
+                        （含 config.json + weights.*）或 mlx-community 的 HF 仓库名。
+                        传仓库名时 mlx 会在首次转录时自动联网拉取（dev 兜底）。
+                        None 时回退到 ``mlx-community/whisper-<size>``。
         """
         self.model_size = model_size
-        self.download_root = download_root
-        self.model = None
-        self._model_lock = threading.Lock()
+        self.model_path = model_path or f"mlx-community/whisper-{model_size}"
+        self._load_lock = threading.Lock()
 
     def _load_model(self):
-        """延迟加载模型"""
-        if self.model is not None:
-            return
-        with self._model_lock:
-            if self.model is not None:
-                return
-            logger.info(f"正在加载Whisper模型: {self.model_size}")
-            # Apple Silicon / macOS 上 ctranslate2 无 CUDA、也不支持 Metal，
-            # 直接走 CPU，避免每次加载都先抛一次 CUDA 失败异常并刷 warning。
-            import sys
-            if sys.platform != "darwin":
-                # 非 macOS：优先尝试 GPU，不可用再回退 CPU。
-                try:
-                    self.model = WhisperModel(self.model_size, device="cuda", compute_type="float16", download_root=self.download_root)
-                    logger.info("模型加载完成（使用 GPU）")
-                    return
-                except Exception as e:
-                    logger.warning(f"GPU 模型加载失败: {e}，回退到 CPU")
-            try:
-                self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8", download_root=self.download_root)
-                logger.info("模型加载完成（CPU）")
-            except Exception as cpu_e:
-                logger.error(f"模型加载失败: {cpu_e}")
-                raise TranscriptionError(f"模型加载失败: {cpu_e}")
-    
+        """触发 mlx 模型加载进显存（预热用）。
+
+        mlx_whisper 在 transcribe 内部通过 ModelHolder 懒加载并缓存单个模型；
+        这里直接预热同一缓存，使首个真实任务无需等待权重加载。
+        """
+        import mlx.core as mx
+        from mlx_whisper.transcribe import ModelHolder
+
+        with self._load_lock:
+            logger.info("正在加载 mlx-whisper 模型: %s (%s)", self.model_size, self.model_path)
+            # dtype 与 transcribe 默认 (fp16=True) 一致，避免预热与实跑加载两份权重。
+            ModelHolder.get_model(self.model_path, mx.float16)
+            logger.info("mlx-whisper 模型加载完成（Metal GPU）")
+
+    def _transcribe_chunk(self, audio_array, language: Optional[str], clip_timestamps=None) -> dict:
+        """转录单个内存波形块（同步，供 asyncio.to_thread 调用）。
+
+        clip_timestamps 非空时（来自 Silero VAD），mlx 只转录这些区间并跳过静音，
+        输出时间戳即该块内的原始时间轴。
+        """
+        import mlx_whisper
+
+        return mlx_whisper.transcribe(
+            audio_array,
+            path_or_hf_repo=self.model_path,
+            language=language,
+            # 抗幻觉阈值（移植自 openai-whisper，与原 faster-whisper 配置对齐）：
+            no_speech_threshold=0.6,         # 无语音阈值
+            compression_ratio_threshold=2.4,  # 压缩比阈值，检测重复
+            logprob_threshold=-1.0,           # 对数概率阈值
+            # 避免错误累积导致的连环重复（长音频尤其重要）。
+            condition_on_previous_text=False,
+            word_timestamps=False,
+            verbose=None,
+            # "0" 是 mlx 默认值（整段）；传 VAD 区间则只转语音。
+            clip_timestamps=clip_timestamps if clip_timestamps else "0",
+        )
+
     async def transcribe(self, audio_path: str, language: Optional[str] = None) -> str:
         """
-        转录音频文件
-        
+        转录音频文件（定长分块 + 块间取消 + 原时间轴回映）。
+
         Args:
             audio_path: 音频文件路径
-            language: 指定语言（可选，如果不指定则自动检测）
-            
+            language: 指定语言（可选，不指定则自动检测，取首块结果）
+
         Returns:
-            转录文本（Markdown格式）
+            转录文本（Markdown 格式，与原 faster-whisper 输出结构一致）
         """
         try:
-            # 检查文件是否存在
             if not os.path.exists(audio_path):
                 raise TranscriptionError(f"音频文件不存在: {audio_path}")
-            
-            # 加载模型（放到线程里，避免首次预热/重载时阻塞事件循环）
-            import asyncio
-            await asyncio.to_thread(self._load_model)
 
-            logger.info(f"开始转录音频: {audio_path}")
+            # 预热/加载模型：钉在专用 MLX 线程上（与后续转录同线程），避免首次加载阻塞事件循环。
+            await _run_on_mlx_thread(self._load_model)
 
-            # faster-whisper 的 transcribe() 返回惰性 generator：实际解码发生在迭代时。
-            # 因此把"创建生成器 + 逐段迭代"整体放进同一个工作线程，既避免阻塞事件循环
-            # （此前迭代跑在主线程，转录期间 SSE 心跳/其它请求都会卡），也使我们能在
-            # 段与段之间检查取消标志：置位时 close() 生成器即停止后续解码，模型留在内存热复用。
+            logger.info("开始转录音频: %s", audio_path)
             cancel_token = cancellation.current()
 
-            def _do_transcribe():
-                segments, info = self.model.transcribe(
-                    audio_path,
-                    language=language,
-                    beam_size=5,
-                    best_of=5,
-                    temperature=[0.0, 0.2, 0.4],  # 使用温度递增策略
-                    # 更稳健：开启VAD与阈值，降低静音/噪音导致的重复。
-                    # 参数对齐 2026 长音频抗幻觉实践（WhisperX / Calm-Whisper）：
-                    # 静音切分更灵敏(500ms)、语音边界留白更足(400ms)，配合 VAD 切除
-                    # 非语音段，显著减少静音处幻觉与重复——这也正好补上 large-v3-turbo
-                    # 在很短/嘈杂片段上幻觉略多的短板。
-                    vad_filter=True,
-                    vad_parameters={
-                        "min_silence_duration_ms": 500,  # 静音检测时长
-                        "speech_pad_ms": 400  # 语音填充
-                    },
-                    no_speech_threshold=0.6,  # 无语音阈值
-                    compression_ratio_threshold=2.4,  # 压缩比阈值，检测重复
-                    log_prob_threshold=-1.0,  # 日志概率阈值
-                    # 避免错误累积导致的连环重复
-                    condition_on_previous_text=False,
-                )
+            total_seconds = await asyncio.to_thread(probe_duration, audio_path)
+            # 时长未知（探测失败）时退化为整段单块，至少保证能转录。
+            if total_seconds and total_seconds > 0:
+                offsets = [i * CHUNK_SECONDS for i in range(int(total_seconds // CHUNK_SECONDS) + 1)]
+                # 末块若恰好整除会得到一个零长块，剔除。
+                offsets = [o for o in offsets if o < total_seconds] or [0.0]
+            else:
+                offsets = [0.0]
 
-                detected_language = info.language
-                logger.info(f"检测到的语言: {detected_language}")
-                logger.info(f"语言检测概率: {info.language_probability:.2f}")
+            detected_language: Optional[str] = None
+            segments: list[dict] = []
 
-                # 组装转录结果
-                transcript_lines = [
-                    "# Video Transcription",
-                    "",
-                    f"**Detected Language:** {detected_language}",
-                    f"**Language Probability:** {info.language_probability:.2f}",
-                    "",
-                    "## Transcription Content",
-                    "",
-                ]
+            def _check_cancel():
+                if cancel_token is not None and cancel_token.is_cancelled():
+                    raise CancelledByUser()
 
-                # 添加时间戳和文本；每段开头检查取消（取消只能在段边界生效，
-                # 当前正在解的一段需先跑完，符合 faster-whisper 的惰性生成器语义）。
-                for segment in segments:
-                    if cancel_token is not None and cancel_token.is_cancelled():
-                        segments.close()  # 释放生成器，停止后续解码
-                        raise CancelledByUser()
-                    start_time = self._format_time(segment.start)
-                    end_time = self._format_time(segment.end)
-                    text = segment.text.strip()
+            def _collect(result, chunk_offset):
+                """收集 mlx 段落：时间戳已是块内原始时间轴，叠加该块偏移即可。"""
+                nonlocal detected_language
+                if detected_language is None:
+                    detected_language = result.get("language")
+                    logger.info("检测到的语言: %s", detected_language)
+                for seg in result.get("segments", []):
+                    text = (seg.get("text") or "").strip()
+                    if not text:
+                        continue
+                    segments.append({
+                        "start": (seg.get("start") or 0.0) + chunk_offset,
+                        "end": (seg.get("end") or 0.0) + chunk_offset,
+                        "text": text,
+                    })
 
-                    transcript_lines.append(f"**[{start_time} - {end_time}]**")
-                    transcript_lines.append("")
-                    transcript_lines.append(text)
-                    transcript_lines.append("")
+            for idx, start in enumerate(offsets):
+                # 块边界检查取消：置位时停止启动后续块，避免取消 asyncio 任务后
+                # 串行队列继续启下一项、两个转录并行抢 GPU（Codex 修正）。
+                _check_cancel()
 
-                return "\n".join(transcript_lines)
+                dur = CHUNK_SECONDS if (total_seconds and start + CHUNK_SECONDS < total_seconds) else None
+                # 整段回退（offsets==[0.0] 且时长未知）：dur=None 解码到末尾。
+                if not total_seconds:
+                    dur = None
 
-            transcript_text = await asyncio.to_thread(_do_transcribe)
-            logger.info("转录完成")
+                audio_array = await asyncio.to_thread(decode_audio_chunk, audio_path, start, dur)
+                if audio_array.size == 0:
+                    continue
 
-            return transcript_text
+                # ── Silero 前置 VAD：切出语音段，转成 clip_timestamps 喂给 mlx ──
+                # mlx 据此只转语音、跳过静音（抑制幻觉/重复 + 提速），输出即原始时间轴。
+                # VAD 是质量增强而非硬依赖：失败时回退到整块直转，保证仍能出结果。
+                clip = None
+                try:
+                    speech = await asyncio.to_thread(get_speech_timestamps, audio_array)
+                    if not speech:
+                        logger.info("块 %d（offset=%.0fs）无语音，跳过", idx, start)
+                        continue
+                    clip = to_clip_timestamps(speech, SAMPLE_RATE)
+                except Exception as e:  # onnxruntime/模型缺失等
+                    logger.warning("VAD 失败，回退整块转录: %s", e)
+                    clip = None
+
+                # MLX 转录必须与 _load_model 落在同一条线程上（见 _MLX_EXECUTOR 注释）。
+                result = await _run_on_mlx_thread(self._transcribe_chunk, audio_array, language, clip)
+                _collect(result, start)
+
+            logger.info("转录完成，共 %d 段", len(segments))
+            return self._assemble_markdown(detected_language, segments)
 
         except CancelledByUser:
             logger.info("转录被用户取消")
             raise
-            
         except TranscriptionError:
             raise
         except Exception as e:
-            logger.error(f"转录失败: {str(e)}")
+            logger.error("转录失败: %s", str(e))
             raise TranscriptionError(f"转录失败: {str(e)}")
-    
+
+    def _assemble_markdown(self, detected_language: Optional[str], segments: list[dict]) -> str:
+        """组装与原 faster-whisper 输出一致的 Markdown，确保下游解析不变。
+
+        mlx 不返回语言概率，故 ``**Language Probability:**`` 写占位 ``—``，不伪造数值。
+        """
+        lines = [
+            "# Video Transcription",
+            "",
+            f"**Detected Language:** {detected_language or 'unknown'}",
+            "**Language Probability:** —",
+            "",
+            "## Transcription Content",
+            "",
+        ]
+        for seg in segments:
+            start_time = self._format_time(seg["start"])
+            end_time = self._format_time(seg["end"])
+            lines.append(f"**[{start_time} - {end_time}]**")
+            lines.append("")
+            lines.append(seg["text"])
+            lines.append("")
+        return "\n".join(lines)
+
     def _format_time(self, seconds: float) -> str:
         """
         将秒数转换为时分秒格式
-        
+
         Args:
             seconds: 秒数
-            
+
         Returns:
             格式化的时间字符串
         """
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         seconds = int(seconds % 60)
-        
+
         if hours > 0:
             return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         else:
             return f"{minutes:02d}:{seconds:02d}"
-    
+
     def get_supported_languages(self) -> list:
         """
         获取支持的语言列表
@@ -197,7 +278,7 @@ class Transcriber:
             "zh", "en", "ja", "ko", "es", "fr", "de", "it", "pt", "ru",
             "ar", "hi", "th", "vi", "tr", "pl", "nl", "sv", "da", "no"
         ]
-    
+
     def get_detected_language(self, transcript_text: Optional[str] = None) -> Optional[str]:
         """从转录文本中解析检测到的语言（无共享状态，委托给纯函数）。"""
         return parse_detected_language(transcript_text)

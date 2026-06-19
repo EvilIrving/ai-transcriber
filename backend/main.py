@@ -136,8 +136,11 @@ def _start_prewarm_thread():
         global _model_error
         try:
             from services import transcriber as _t
+            from transcriber import run_on_mlx_thread_sync
             logger.info("🔥 后台预热 Whisper 模型（首次运行将自动下载）...")
-            _t._load_model()
+            # 预热必须跑在专用 MLX 线程上：否则在此预热线程上绑定的 GPU stream，
+            # 后续转录换线程访问会触发 MLX 抛 C++ 异常并 abort 整个进程。
+            run_on_mlx_thread_sync(_t._load_model)
             _model_ready.set()
             logger.info("✅ Whisper 模型就绪")
         except Exception as e:

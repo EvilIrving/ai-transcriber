@@ -64,10 +64,11 @@ async def diagnostics():
     ffprobe = FFPROBE_BIN if (os.path.sep in FFPROBE_BIN and Path(FFPROBE_BIN).exists()) else shutil.which("ffprobe")
     deno = shutil.which("deno")
     try:
-        import faster_whisper
-        fw_ver = getattr(faster_whisper, "__version__", "?")
+        import mlx_whisper
+        import mlx
+        asr_ver = f"mlx-whisper {getattr(mlx_whisper, '__version__', '?')} / mlx {getattr(mlx, '__version__', '?')}"
     except Exception:
-        fw_ver = "未安装"
+        asr_ver = "未安装"
     try:
         import yt_dlp
         ytdlp_ver = getattr(yt_dlp.version, "__version__", "?")
@@ -85,7 +86,7 @@ async def diagnostics():
         "ffmpeg": ffmpeg or "未找到",
         "ffprobe": ffprobe or "未找到",
         "deno": deno or "未找到",
-        "faster_whisper": fw_ver,
+        "asr": asr_ver,
         "yt_dlp": ytdlp_ver,
     }
 

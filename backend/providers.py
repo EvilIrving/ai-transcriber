@@ -1,6 +1,6 @@
 """Provider 接口层：用 Protocol 定义 ASR / LLM 后端的契约。
 
-目的：把"管线对后端的依赖"从"具体实现"（faster-whisper、OpenAI SDK）解耦为
+目的：把"管线对后端的依赖"从"具体实现"（mlx-whisper、OpenAI SDK）解耦为
 "结构化接口"。任何满足该 Protocol 的对象都能被注入管线，无需改动编排代码——
 这就是把后端做得 flexible / 可替换的关键。
 
@@ -16,7 +16,7 @@ from typing import Optional, Protocol, runtime_checkable
 
 @runtime_checkable
 class ASRBackend(Protocol):
-    """语音转文字后端契约。faster-whisper、远程转写 API 等都可实现它。"""
+    """语音转文字后端契约。mlx-whisper、远程转写 API 等都可实现它。"""
 
     async def transcribe(self, audio_path: str, language: Optional[str] = None) -> str:
         """把音频转成 Markdown 格式的原始转录文本。"""
@@ -46,12 +46,13 @@ class SummarizerBackend(Protocol):
     def is_available(self) -> bool: ...
 
 
-def build_asr_backend(name: str = "faster-whisper", **kwargs) -> ASRBackend:
+def build_asr_backend(name: str = "mlx-whisper", **kwargs) -> ASRBackend:
     """ASR 后端工厂：按名称构建转写后端，便于通过配置切换实现。
 
-    目前只内置 faster-whisper；新增远程后端时在此分派即可，调用方无需改动。
+    目前只内置 mlx-whisper（Apple Silicon 本地转写）；新增远程后端时在此分派即可，
+    调用方无需改动。
     """
-    if name in ("faster-whisper", "whisper", "local"):
+    if name in ("mlx-whisper", "mlx", "whisper", "local"):
         from transcriber import Transcriber
 
         return Transcriber(**kwargs)

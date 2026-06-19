@@ -8,7 +8,7 @@ PyInstaller spec — MediaBrief 桌面应用
 
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 # ── 路径常量 ──
 ROOT = Path(SPECPATH).parent  # spec 文件在 pyinstaller/ 下，项目根往上一层
@@ -30,23 +30,45 @@ added_files = static_datas
 # hiddenimports 自动收集。缺失时发布包在无开发环境的机器上可能列不到可用格式。
 added_files += collect_data_files("yt_dlp")
 
-# faster-whisper 自带的 VAD 模型等数据文件（assets/silero_vad_v6.onnx）也是包内
-# 非 .py 数据文件，PyInstaller 默认不收集。缺失会导致转录时报
-# ONNXRuntimeError NO_SUCHFILE: silero_vad_v6.onnx File doesn't exist。
-added_files += collect_data_files("faster_whisper")
+# mlx_whisper 自带的资产（assets/mel_filters.npz、*.tiktoken 分词表）是包内非 .py
+# 数据文件，PyInstaller 默认不收集；缺失会导致转录时无法构建 mel 频谱 / 分词。
+added_files += collect_data_files("mlx_whisper")
 
-# ── 内嵌 base Whisper 模型 ──
-# 构建时把 base 模型下载到 pyinstaller/bundled-models（HF cache 布局），
-# 打进 bundle 的 ``whisper-models/`` 目录；首次启动由 start.py 复制到
-# 可写数据目录，保证 base 离线即用。其余尺寸经前端「下载」按需获取。
+# mlx 的数据文件：关键是 Metal 内核 ``mlx/lib/mlx.metallib``——MLX 新版把 Metal 后端
+# 拆为独立发行包(mlx-metal)，仅加 hidden import 不够，必须显式收 metallib + dylib，
+# 否则打包后 GPU 不可用 / 启动即崩。dylib 由下方 collect_dynamic_libs 收集。
+added_files += collect_data_files("mlx")
+
+# onnxruntime 数据/原生库（Silero VAD 推理依赖）。
+added_files += collect_data_files("onnxruntime")
+
+# vendored 的 Silero VAD 模型：放到 bundle 的 ``assets/``，与 silero_vad._resolve_asset_path
+# 的探测路径(_MEIPASS/assets)一致。缺失则 VAD 不可用（会回退整块转录，但失去抗幻觉）。
+_vad_onnx = BACKEND_DIR / "assets" / "silero_vad_v6.onnx"
+if _vad_onnx.is_file():
+    added_files.append((str(_vad_onnx), "assets"))
+else:
+    print(f"[spec] 警告：未找到 VAD 模型 {_vad_onnx}，打包后 Silero VAD 将不可用")
+
+# ── 内嵌 base Whisper 模型（mlx-community/whisper-base-mlx）──
+# 构建时把 base 模型下载到 pyinstaller/bundled-models/base，打进 bundle 的
+# ``whisper-models/base/`` 目录；首次启动由 start.py 复制到可写数据目录，保证
+# base 离线即用（is_downloaded 按 config.json + weights.npz 判定）。其余尺寸经
+# 前端「下载」按需获取。
 BUNDLED_MODELS_DIR = ROOT / "pyinstaller" / "bundled-models"
 try:
-    from faster_whisper.utils import download_model as _dl_model
-    BUNDLED_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    _dl_model("Systran/faster-whisper-base", cache_dir=str(BUNDLED_MODELS_DIR))
-    for _mf in BUNDLED_MODELS_DIR.rglob("*"):
+    from huggingface_hub import snapshot_download as _snap
+    _base_dir = BUNDLED_MODELS_DIR / "base"
+    _base_dir.mkdir(parents=True, exist_ok=True)
+    _snap(
+        repo_id="mlx-community/whisper-base-mlx",
+        local_dir=str(_base_dir),
+        allow_patterns=["config.json", "weights.npz", "*.json"],
+    )
+    for _mf in _base_dir.rglob("*"):
         if _mf.is_file():
-            _dest = "whisper-models/" + str(_mf.parent.relative_to(BUNDLED_MODELS_DIR))
+            _rel = _mf.parent.relative_to(_base_dir)
+            _dest = ("whisper-models/base" if str(_rel) == "." else f"whisper-models/base/{_rel}")
             added_files.append((str(_mf), _dest))
 except Exception as _e:  # noqa: BLE001
     print(f"[spec] 警告：内嵌 base 模型失败，将依赖首次联网下载: {_e}")
@@ -72,14 +94,25 @@ hidden_imports = [
     "uvicorn.protocols.http.auto",
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan.on",
-    # ── faster-whisper / ctranslate2 ──
-    "ctranslate2",
-    "ctranslate2.converters",
-    "ctranslate2.models",
-    "ctranslate2.specs",
-    "faster_whisper",
-    "faster_whisper.vad",
-    "faster_whisper.tokenizer",
+    # ── mlx / mlx-whisper（Apple Silicon ASR）──
+    # 只列推理路径用到的子模块；不列 mlx_whisper.torch_whisper（仅权重转换用，
+    # 会拖入 torch ~440MB），torch 已在 excludes 中排除。
+    "mlx",
+    "mlx.core",
+    "mlx.nn",
+    "mlx.utils",
+    "mlx_whisper",
+    "mlx_whisper.audio",
+    "mlx_whisper.decoding",
+    "mlx_whisper.load_models",
+    "mlx_whisper.transcribe",
+    "mlx_whisper.whisper",
+    "mlx_whisper.tokenizer",
+    "mlx_whisper.timing",
+    "huggingface_hub",
+    # ── Silero 前置 VAD ──
+    "onnxruntime",
+    "silero_vad",
     # ── 导出库 ──
     "markdown",
     "bs4",
@@ -103,21 +136,27 @@ try:
 except ImportError:
     pass
 
-# ── 收集 ctranslate2 原生库（.dylib 在隐藏目录 .dylibs/ 下，PyInstaller 可能遗漏） ──
+# ── 收集 mlx 原生库（libmlx.dylib / libjaccl.dylib 等，在 mlx/lib/ 下） ──
+# collect_dynamic_libs 抓 .dylib/.so；metallib(Metal 内核)不是动态库，已由上面
+# collect_data_files("mlx") 收进。两者缺一，打包后都跑不起 Metal 后端。
 binaries = []
-import glob as _glob
-_ct2_dir = None
+binaries += collect_dynamic_libs("mlx")
+binaries += collect_dynamic_libs("mlx_whisper")
+# onnxruntime 的原生库（capi/*.dylib），Silero VAD 推理所需。
+binaries += collect_dynamic_libs("onnxruntime")
+
+# 兜底：显式把 mlx/lib 下的 dylib + metallib 收齐，防 collect_* 在某些版本漏收。
 try:
-    import ctranslate2
-    _ct2_dir = Path(ctranslate2.__file__).parent
-except ImportError:
-    pass
-if _ct2_dir and _ct2_dir.exists():
-    _dylibs_dir = _ct2_dir / ".dylibs"
-    if _dylibs_dir.exists():
-        for _f in _dylibs_dir.iterdir():
-            if _f.is_file():
-                binaries.append((str(_f), "."))
+    import mlx
+    _mlx_lib = Path(mlx.__path__[0]) / "lib"
+    if _mlx_lib.is_dir():
+        for _f in _mlx_lib.iterdir():
+            if _f.suffix == ".dylib":
+                binaries.append((str(_f), "mlx/lib"))
+            elif _f.suffix == ".metallib":
+                added_files.append((str(_f), "mlx/lib"))
+except Exception as _e:  # noqa: BLE001
+    print(f"[spec] 警告：mlx 原生库兜底收集失败: {_e}")
 
 # ── macOS 专用配置 ──
 if sys.platform == "darwin":
@@ -156,6 +195,11 @@ a = Analysis(
         "numpy.testing",
         "scipy",
         "PIL",
+        # torch 仅被 mlx_whisper.torch_whisper（权重转换）引用，推理路径用不到；
+        # 排除以省下 ~440MB 安装体积。
+        "torch",
+        "torchvision",
+        "torchaudio",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -180,7 +224,8 @@ exe = EXE(
     upx=True,
     console=False,
     # 仅支持 Apple Silicon (arm64)，不支持 Intel Mac。
-    # ctranslate2 等依赖只有单架构 wheel，无法 universal2，须在 arm64 机器上构建。
+    # mlx / mlx-metal 是 Apple Silicon 专用（Metal 后端），无 Intel/universal2 wheel，
+    # 必须在 arm64 机器上构建。
     target_arch=None,
 )
 

@@ -1,7 +1,9 @@
 """Whisper 模型管理：目录解析、下载、按尺寸缓存 Transcriber 实例。
 
-模型文件统一下载到 *可写* 的数据目录（打包后为 Application Support），
-而非默认的 ``~/.cache/huggingface``，便于桌面端管理、内嵌与清理。
+ASR 引擎为 mlx-whisper（Apple MLX），模型权重取自 mlx-community 仓库。
+每个尺寸下载到 *可写* 数据目录下的独立子目录 ``MODEL_DIR/<size>/``
+（而非默认 ``~/.cache/huggingface`` 的 HF cache 布局），便于桌面端管理、
+内嵌与清理，也让 ``is_downloaded`` 不必推算 HF 缓存目录结构。
 
 下载源遵循中立原则：默认走官方 Hugging Face；用户若在前端设置中填写
 ``hf_endpoint``（镜像 / 公司代理等），仅在该次下载期间临时生效，不写死。
@@ -14,23 +16,27 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from faster_whisper.utils import download_model
+from huggingface_hub import snapshot_download
 
 from task_store import TEMP_DIR
 from transcriber import Transcriber
 
 logger = logging.getLogger(__name__)
 
-# ── 可选模型目录（HF 仓库名）。large 固定指向 large-v3。 ──
+# ── 可选模型目录（mlx-community HF 仓库名）。large 固定指向 large-v3。 ──
 CATALOG: dict[str, str] = {
-    "base": "Systran/faster-whisper-base",
-    "small": "Systran/faster-whisper-small",
-    "medium": "Systran/faster-whisper-medium",
-    # large-v3-turbo：2024.10 发布，解码比 large-v3 快约 8×、int8 仅约 1.5GB 内存，
-    # 中/英/日/韩四语全覆盖，是 CPU 部署的精度/速度甜点（2026 仍然成立）。
-    "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
-    "large-v3": "Systran/faster-whisper-large-v3",
+    "base": "mlx-community/whisper-base-mlx",
+    "small": "mlx-community/whisper-small-mlx",
+    "medium": "mlx-community/whisper-medium-mlx",
+    # large-v3-turbo：解码比 large-v3 快约 8×，fp16 权重约 1.6GB，中/英/日/韩四语
+    # 全覆盖。在 Apple Silicon 上吃 Metal GPU，是质量/速度的甜点（2026 实测 22.9× 实时）。
+    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
+    "large-v3": "mlx-community/whisper-large-v3-mlx",
 }
+
+# mlx-community 各仓库的权重文件名：turbo 为 safetensors，其余为 npz。
+# is_downloaded 按「config.json + 任一权重存在」判定（Codex 修正）。
+_WEIGHT_FILES = ("weights.safetensors", "weights.npz")
 
 # 近似下载体积（MB），仅用于前端展示，无需精确。
 APPROX_SIZE_MB: dict[str, int] = {
@@ -48,7 +54,7 @@ DEFAULT_MODEL = "large-v3-turbo"
 # （打包时只内嵌它，避免安装包过大；large-v3-turbo 首启后台下载。）
 BUILTIN_MODEL = "base"
 
-# 所有模型统一下载到此目录（HF cache 布局：models--Systran--faster-whisper-*）。
+# 所有模型统一下载到此目录，每个尺寸落到独立子目录 MODEL_DIR/<size>/。
 MODEL_DIR = Path(os.environ.get("WHISPER_MODEL_DIR") or (TEMP_DIR / "whisper-models"))
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -57,20 +63,20 @@ _registry_lock = threading.Lock()
 _download_lock = threading.Lock()
 
 
-def _hf_cache_dirname(size: str) -> str:
-    """HF cache 目录名，对应 download_model(cache_dir=MODEL_DIR) 的落盘布局。"""
-    return "models--" + CATALOG[size].replace("/", "--")
+def model_dir(size: str) -> Path:
+    """该尺寸模型的本地目录（含 config.json + weights.*）。"""
+    return MODEL_DIR / size
 
 
 def is_downloaded(size: str) -> bool:
     """该尺寸模型是否已存在于本地（无需联网）。"""
     if size not in CATALOG:
         return False
-    snap = MODEL_DIR / _hf_cache_dirname(size) / "snapshots"
-    if not snap.is_dir():
+    d = model_dir(size)
+    if not (d / "config.json").is_file():
         return False
-    # snapshots/<rev>/model.bin 存在即视为完整
-    return any((d / "model.bin").exists() for d in snap.iterdir() if d.is_dir())
+    # turbo=weights.safetensors / 其余=weights.npz，任一存在即视为完整。
+    return any((d / w).is_file() for w in _WEIGHT_FILES)
 
 
 def list_models() -> list[dict]:
@@ -89,7 +95,7 @@ def list_models() -> list[dict]:
 
 
 def download(size: str, hf_endpoint: Optional[str] = None) -> None:
-    """下载指定尺寸模型到 MODEL_DIR。阻塞调用，请在线程中执行。
+    """下载指定尺寸模型到 MODEL_DIR/<size>/。阻塞调用，请在线程中执行。
 
     hf_endpoint 非空时仅在本次下载临时设置 HF_ENDPOINT，结束后恢复。
     """
@@ -106,7 +112,12 @@ def download(size: str, hf_endpoint: Optional[str] = None) -> None:
             if endpoint:
                 os.environ["HF_ENDPOINT"] = endpoint
             logger.info("⬇️  下载 Whisper 模型 %s (endpoint=%s)", size, endpoint or "default")
-            download_model(CATALOG[size], cache_dir=str(MODEL_DIR))
+            snapshot_download(
+                repo_id=CATALOG[size],
+                local_dir=str(model_dir(size)),
+                # 只取推理所需文件，跳过 README/.gitattributes 等。
+                allow_patterns=["config.json", "weights.safetensors", "weights.npz", "*.json"],
+            )
             logger.info("✅ Whisper 模型 %s 下载完成", size)
         finally:
             if endpoint:
@@ -165,6 +176,9 @@ def get_transcriber(size: Optional[str] = None) -> Transcriber:
         cached = _registry.get(size)
         if cached is not None:
             return cached
-        t = Transcriber(model_size=size, download_root=str(MODEL_DIR))
+        # 已下载用本地目录；未下载（如 dev 未播种 base）传 HF 仓库名，
+        # 让 mlx 在首次转录时自动拉取，保证开箱即用。
+        path = str(model_dir(size)) if is_downloaded(size) else CATALOG[size]
+        t = Transcriber(model_size=size, model_path=path)
         _registry[size] = t
         return t

@@ -120,6 +120,78 @@ def _run_media_proc(cmd: list[str], timeout: Optional[float] = None, label: str 
     return stdout
 
 
+def _run_media_proc_bytes(cmd: list[str], timeout: Optional[float] = None, label: str = "ffmpeg") -> bytes:
+    """同 _run_media_proc，但返回 *二进制* stdout（解码 PCM 等场景）。
+
+    与文本版共用进程组登记 + 取消令牌 + 库路径清理 + 超时兜底，只是 stdout 走
+    binary 管道，避免 text=True 把原始 PCM 字节按 UTF-8 解码而损坏。
+    """
+    token = cancellation.current()
+    popen_kwargs = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "env": _subprocess_env(),
+    }
+    if os.name == "posix":
+        popen_kwargs["start_new_session"] = True
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+    if token is not None:
+        token.register_process(proc)
+    try:
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise Exception(f"{label}超时（超过 {int(timeout or 0)} 秒）")
+    finally:
+        if token is not None:
+            token.unregister_process(proc)
+    if token is not None and token.is_cancelled():
+        raise CancelledByUser()
+    if proc.returncode != 0:
+        err = (stderr.decode("utf-8", "replace") if stderr else "").strip()[:800]
+        raise Exception(f"{label}失败: {err}")
+    return stdout
+
+
+# mlx-whisper 的解码输入：单声道、16kHz、float32 波形。
+TRANSCRIBE_SAMPLE_RATE = 16000
+
+
+def probe_duration(path: str, timeout: float = 60) -> float:
+    """用 ffprobe 取媒体时长（秒）；无法解析时返回 0.0。"""
+    out = _run_media_proc(
+        [FFPROBE_BIN, "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", path],
+        timeout=timeout, label="ffprobe 探测时长",
+    ).strip()
+    return float(out) if out else 0.0
+
+
+def decode_audio_chunk(audio_path: str, start_s: float = 0.0, duration_s: Optional[float] = None):
+    """解码 [start_s, start_s+duration_s) 区间的音频为 float32 numpy 波形。
+
+    用绝对路径的 FFMPEG_BIN（不依赖 PATH，见项目约定）输出 s16le PCM，再归一化到
+    [-1, 1] 的 float32——这正是 mlx_whisper.transcribe 接受的内存输入格式。
+    输入侧 -ss/-t 做快速 seek，使逐块转录的内存只占单块大小（长音频友好）。
+    duration_s 为 None 时解码到文件末尾（时长未知时的整段回退）。
+    """
+    import numpy as np
+
+    cmd = [FFMPEG_BIN, "-nostdin", "-ss", f"{max(start_s, 0):.3f}"]
+    if duration_s is not None:
+        cmd += ["-t", f"{max(duration_s, 0):.3f}"]
+    cmd += [
+        "-i", audio_path,
+        "-vn", "-threads", "0",
+        "-f", "s16le", "-ac", "1", "-acodec", "pcm_s16le",
+        "-ar", str(TRANSCRIBE_SAMPLE_RATE), "-",
+    ]
+    raw = _run_media_proc_bytes(cmd, timeout=600, label="ffmpeg 解码音频块")
+    return np.frombuffer(raw, np.int16).astype(np.float32) / 32768.0
+
+
 class VideoProcessor:
     """媒体处理器，使用yt-dlp下载和转换媒体"""
 
@@ -724,12 +796,7 @@ class VideoProcessor:
             #    直送 Whisper（现已随包内置 ffprobe，探测失败也会显式告警）；
             #  · shell=True 的跨平台/引号问题，且子进程无法被取消令牌回收。
             def _probe_duration(path: str) -> float:
-                out = _run_media_proc(
-                    [FFPROBE_BIN, "-v", "error", "-show_entries", "format=duration",
-                     "-of", "default=noprint_wrappers=1:nokey=1", path],
-                    timeout=60, label="ffprobe 探测时长",
-                ).strip()
-                return float(out) if out else 0.0
+                return probe_duration(path)
 
             try:
                 actual_duration = await asyncio.to_thread(_probe_duration, audio_file)

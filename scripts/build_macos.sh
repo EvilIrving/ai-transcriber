@@ -17,7 +17,7 @@ APP_NAME="MediaBrief"
 
 # ── 构建架构 ──
 # 仅支持 Apple Silicon (arm64)，不支持 Intel Mac。
-# ctranslate2 等依赖只有单架构 wheel，无法构建 universal2，须在 arm64 机器上构建。
+# mlx / mlx-metal 是 Apple Silicon 专用（Metal 后端），无 universal2 wheel，须在 arm64 机器上构建。
 ARCH="$(uname -m)"
 if [ "$ARCH" != "arm64" ]; then
     echo "❌ 本应用仅支持 Apple Silicon (arm64)，当前架构: $ARCH"
@@ -177,6 +177,24 @@ else
 fi
 
 echo "   ✅ .app Bundle 就绪: $APP_BUNDLE"
+
+# ── 校验 mlx Metal 后端资产已收进 bundle ──
+# MLX 的 Metal 后端是独立发行包：缺 mlx.metallib 或 libmlx.dylib 时，打包后会在
+# 首次转录时崩/退回不可用。这里做一次存在性 + 链接体检（非致命，只告警）。
+echo ""
+echo "🔎 校验 mlx Metal 后端资产..."
+RES_DIR="$APP_BUNDLE/Contents/Resources"
+FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
+_metallib=$(find "$RES_DIR" "$FRAMEWORKS_DIR" -name "mlx.metallib" 2>/dev/null | head -1)
+_libmlx=$(find "$RES_DIR" "$FRAMEWORKS_DIR" -name "libmlx.dylib" 2>/dev/null | head -1)
+_mlxcore=$(find "$RES_DIR" "$FRAMEWORKS_DIR" -name "core.cpython-*-darwin.so" -path "*mlx*" 2>/dev/null | head -1)
+if [ -n "$_metallib" ]; then echo "   ✅ mlx.metallib: $_metallib"; else echo "   ⚠️  未找到 mlx.metallib —— Metal 内核缺失，GPU 转录会失败！"; fi
+if [ -n "$_libmlx" ]; then echo "   ✅ libmlx.dylib: $_libmlx"; else echo "   ⚠️  未找到 libmlx.dylib"; fi
+if [ -n "$_mlxcore" ]; then
+    echo "   mlx core 动态库链接 (otool -L):"
+    otool -L "$_mlxcore" 2>/dev/null | sed -n '2,12p' | sed 's/^/      /'
+fi
+echo "   提示：打包后请断网启动一次并跑一条短转录，确认 Metal 真正可用。"
 
 # ── 打包为 ZIP 发布 ──
 # 使用 ditto 而非 zip：保留 PyInstaller .app 内的符号链接与权限位，

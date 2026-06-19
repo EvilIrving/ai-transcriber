@@ -157,42 +157,9 @@ def _ensure_default_model():
 _ensure_default_model()
 
 
-# ── 确保 faster-whisper 的 VAD 模型可被定位 ──
-def _ensure_vad_asset():
-    """保证 silero_vad_v6.onnx 能被 faster-whisper 找到。
-
-    faster_whisper.vad 通过 ``get_assets_path()`` = ``dirname(__file__)/assets``
-    定位 VAD 模型。PyInstaller 把该数据文件收进 ``Contents/Resources``，靠
-    ``Frameworks/faster_whisper -> ../Resources/faster_whisper`` 这个符号链接才
-    使期望路径可达。分发时(某些解压器/拷贝方式)若符号链接丢失，期望路径就会失效，
-    转录时报 ``ONNXRuntimeError NO_SUCHFILE: silero_vad_v6.onnx File doesn't exist``。
-    这里绕过符号链接、直接探测 Resources 下的真实文件，必要时把 get_assets_path
-    指向它，确保即使链接损坏也能加载。
-    """
-    if not getattr(sys, "frozen", False):
-        return
-    asset = "silero_vad_v6.onnx"
-    meipass = Path(getattr(sys, "_MEIPASS", APP_DIR))
-    # 候选目录：期望路径(可能是符号链接) → Resources 下的真实目录(macOS .app)
-    candidates = [
-        meipass / "faster_whisper" / "assets",
-        meipass.parent / "Resources" / "faster_whisper" / "assets",
-    ]
-    found = next((d for d in candidates if (d / asset).is_file()), None)
-    if not found:
-        return
-    try:
-        from faster_whisper.utils import get_assets_path
-        # 期望路径已能拿到文件(符号链接完好)，无需干预
-        if (Path(get_assets_path()) / asset).is_file():
-            return
-        import faster_whisper.vad as _fw_vad
-        _fw_vad.get_assets_path = lambda _p=str(found): _p
-        print(f"🔧 VAD 模型符号链接缺失，已重定向至: {found}")
-    except Exception as e:
-        print(f"⚠️  VAD 模型定位兜底失败: {e}")
-
-_ensure_vad_asset()
+# 注：Phase 1 移除了 faster-whisper 的 Silero VAD 资产定位兜底（引擎已换成
+# mlx-whisper）。长音频抗幻觉/重复改由 transcriber 的分块阈值兜底；Phase 2 若
+# 引入 Silero 前置 VAD，再以新形式补回资产处理。
 
 
 # ── 桌面服务固定监听地址 ──
@@ -313,7 +280,7 @@ def main():
         _report(f"   ⚠️  Deno 未找到，YouTube 签名解算可能失败（Requested format is not available）", logging.WARNING)
     _report("=" * 50)
 
-    # 提前触发重型依赖导入（faster-whisper / ctranslate2 等），避免阻塞 uvicorn 启动
+    # 提前触发重型依赖导入（mlx-whisper / mlx 等），避免阻塞 uvicorn 启动
     _report("📦 预加载依赖...")
     t0 = time.time()
     try:

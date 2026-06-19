@@ -24,8 +24,9 @@
 """任务取消内核：协作式取消标志 + 子进程组回收。
 
 设计依据(各上游库的官方取消机制)：
-- faster-whisper：``transcribe()`` 返回惰性 generator，迭代到段与段之间检查标志，
-  ``break`` + ``segments.close()`` 即可停止后续解码，模型留在内存中热复用。
+- mlx-whisper：单块 ``transcribe()`` 一次性执行（非惰性），取消只能在*块边界*生效：
+  transcriber 把长音频切成定长块，块与块之间检查标志，置位即停止启动后续块
+  （避免取消 asyncio 任务后串行队列继续启下一项、两个转录并行抢 GPU），模型留在显存热复用。
 - yt-dlp：在 ``progress_hooks`` / ``postprocessor_hooks`` 中 ``raise DownloadCancelled``
   可干净中断下载阶段。
 - ffmpeg：外部子进程，只能靠信号。用 ``start_new_session=True`` 让其成为进程组组长，

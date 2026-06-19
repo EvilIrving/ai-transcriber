@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import faulthandler
 import logging
 import os
 import sys
@@ -16,6 +17,8 @@ from pathlib import Path
 
 _LOG_FILE: Path | None = None
 _CONFIGURED = False
+# faulthandler 需要一个在进程存活期间始终打开的文件对象，故用模块级变量持有，防止被 GC。
+_CRASH_LOG_FP = None
 
 
 def _get_log_dir() -> Path:
@@ -42,6 +45,26 @@ def get_log_file() -> Path:
     return _LOG_FILE
 
 
+def _enable_crash_dump(log_dir: Path) -> None:
+    """开启 faulthandler，让原生致命错误也能在日志里留痕。
+
+    像 MLX / CTranslate2 这类 C++ 扩展抛出的未捕获异常会触发 abort()（SIGABRT），
+    直接绕过 Python：sys.excepthook / threading.excepthook 都抓不到，信息只打到终端
+    stderr，日志文件里一片空白。faulthandler 在收到 SIGABRT/SIGSEGV/SIGBUS/SIGFPE/
+    SIGILL 时会把所有线程的 Python 调用栈转储到指定文件，给原生崩溃留下排查线索。
+    文件需在进程存活期间保持打开（见 _CRASH_LOG_FP）。
+    """
+    global _CRASH_LOG_FP
+    if _CRASH_LOG_FP is not None:
+        return
+    try:
+        # buffering=1（行缓冲）确保崩溃瞬间已写入的栈不会滞留在缓冲区里丢失。
+        _CRASH_LOG_FP = open(log_dir / "crash.log", "a", buffering=1, encoding="utf-8")
+        faulthandler.enable(file=_CRASH_LOG_FP, all_threads=True)
+    except Exception:  # 任何环境（受限 fd / 只读盘等）下都不应阻断启动
+        pass
+
+
 def configure_logging(level: int | None = None) -> Path:
     """配置 root logger，并让 uvicorn 日志复用同一套处理器。"""
     global _CONFIGURED
@@ -53,6 +76,9 @@ def configure_logging(level: int | None = None) -> Path:
     log_file = get_log_file()
     if _CONFIGURED:
         return log_file
+
+    # 原生崩溃转储：在配置其余日志前先挂上，尽早覆盖启动期的扩展加载。
+    _enable_crash_dump(log_file.parent)
 
     formatter = logging.Formatter("%(asctime)s %(levelname)s:%(name)s:%(message)s")
 
