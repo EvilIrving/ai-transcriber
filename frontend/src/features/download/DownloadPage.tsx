@@ -44,7 +44,8 @@ export function DownloadPage() {
   const [audioFmt, setAudioFmt] = useState("bestaudio/best")
   const [audioContainer, setAudioContainer] = useState("m4a")
   const [subLang, setSubLang] = useState("")
-  const [phase, setPhase] = useState<"formats" | "progress" | "completed" | "none">("none")
+  const [phase, setPhase] = useState<"formats" | "fallback" | "progress" | "completed" | "none">("none")
+  const [fallbackWarning, setFallbackWarning] = useState("")
   const [progress, setProgress] = useState({ pct: 0, stageName: "", msg: "" })
   const [completed, setCompleted] = useState({ filename: "", fileUrl: "#" })
 
@@ -95,7 +96,8 @@ export function DownloadPage() {
       setTab("video")
       setPhase("formats")
     } catch (e) {
-      showError(t("detect_failed") + (e as Error).message)
+      setFallbackWarning((e as Error).message || "")
+      setPhase("fallback")
     } finally {
       setDetecting(false)
     }
@@ -210,6 +212,24 @@ export function DownloadPage() {
           {detecting ? t("detecting") : t("detect")}
         </Button>
       </div>
+
+      {phase === "fallback" && (
+        <div className="rounded-lg border border-[var(--warning-border,#d4a017)] bg-[var(--warning-bg,rgba(212,160,23,0.06))] p-4 mt-4">
+          <p className="text-sm text-[var(--text-dim)] mb-1">{t("formats_unavailable")}</p>
+          {fallbackWarning && <p className="text-xs text-[var(--text-dim)] opacity-70 mb-3">{fallbackWarning}</p>}
+          <div className="flex flex-col gap-2">
+            <Button className="w-full justify-center" onClick={() => void startDownload("video")}>
+              {t("direct_download_video_btn")}
+            </Button>
+            <Button variant="secondary" className="w-full justify-center" onClick={() => void startDownload("audio")}>
+              {t("direct_download_audio_btn")}
+            </Button>
+            <Button variant="secondary" className="w-full justify-center" onClick={() => void startDownload("subtitle")}>
+              {t("direct_download_subtitle_btn")}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {phase === "formats" && data && (
         <Tabs value={tab} onValueChange={(v) => setTab(v as DwnTab)}>
