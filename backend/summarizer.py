@@ -2,6 +2,8 @@ import openai
 import json
 import logging
 import re
+import threading
+import time
 from typing import Optional
 
 from config import settings
@@ -34,6 +36,33 @@ _TRANSCRIPT_OPTIMIZE_SCHEMA = {
     "required": ["paragraphs"],
     "additionalProperties": False,
 }
+
+# ── json_schema 支持探测缓存 ──────────────────────────────────
+# 不同 (model, base_url) 组合对 response_format/json_schema 的支持能力不同，
+# 首次调用探测后缓存，避免每个分块都浪费一次 400 往返。
+# 带 TTL 以应对模型服务升级后新能力的自动感知。
+_schema_cache: dict[tuple[str, str], tuple[bool, float]] = {}
+_schema_cache_lock = threading.Lock()
+_SCHEMA_CACHE_TTL = 30 * 60  # 30 分钟
+
+
+def _get_schema_support(model: str, base_url: str) -> Optional[bool]:
+    key = (model, base_url)
+    with _schema_cache_lock:
+        entry = _schema_cache.get(key)
+        if entry is None:
+            return None
+        value, ts = entry
+        if _SCHEMA_CACHE_TTL > 0 and (time.monotonic() - ts) > _SCHEMA_CACHE_TTL:
+            del _schema_cache[key]
+            return None
+        return value
+
+
+def _set_schema_support(model: str, base_url: str, value: bool) -> None:
+    key = (model, base_url)
+    with _schema_cache_lock:
+        _schema_cache[key] = (value, time.monotonic())
 
 
 def _raise_if_fatal_llm_error(exc: Exception) -> None:
@@ -106,6 +135,7 @@ class Summarizer:
         # 模型 ID 仅来自构造函数参数（前端 Settings）。
         self.fast_model = effective_model
         self.advanced_model = effective_model
+        self._base_url = effective_url
         # LLM 总超时（兜底），集中在 config.settings 调整
         self._llm_timeout = settings.llm_timeout_sec
         
@@ -277,14 +307,21 @@ class Summarizer:
             return self._apply_basic_formatting(chunk_text)
 
     def _chat_optimize_with_schema(self, messages: list):
-        """优先以 json_schema 结构化输出调用；对不支持该特性的 OpenAI 兼容服务自动回退到纯文本。"""
+        """优先以 json_schema 结构化输出调用；对不支持该特性的 OpenAI 兼容服务自动回退到纯文本。
+
+        首次探测结果缓存于模块级 dict，带 TTL，后续同配置调用跳过 try/catch 直达正确路径。
+        """
+        cache_key = (self.fast_model, str(self._base_url))
         base_kwargs = dict(
             model=self.fast_model,
             messages=messages,
             max_tokens=8000,
             temperature=0.1,
         )
-        try:
+        cached = _get_schema_support(*cache_key)
+        if cached is False:
+            return self.client.chat.completions.create(**base_kwargs)
+        if cached is True:
             return self.client.chat.completions.create(
                 **base_kwargs,
                 response_format={
@@ -296,12 +333,28 @@ class Summarizer:
                     },
                 },
             )
+        # 缓存未命中（首次 / TTL 过期）→ 探测
+        try:
+            response = self.client.chat.completions.create(
+                **base_kwargs,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "optimized_transcript",
+                        "strict": True,
+                        "schema": _TRANSCRIPT_OPTIMIZE_SCHEMA,
+                    },
+                },
+            )
+            _set_schema_support(*cache_key, True)
+            return response
         except Exception as e:
             # 仅当是「不支持 response_format/json_schema」类的请求参数错误时回退；
             # 鉴权/额度/连接等致命错误不在此吞掉，交由上层 except 统一处理。
             if not self._is_unsupported_schema_error(e):
                 raise
-            logger.info(f"模型不支持 json_schema 结构化输出，回退纯文本：{e}")
+            _set_schema_support(*cache_key, False)
+            logger.info(f"模型不支持 json_schema（已缓存），回退纯文本：{e}")
             return self.client.chat.completions.create(**base_kwargs)
 
     @staticmethod

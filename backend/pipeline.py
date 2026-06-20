@@ -132,11 +132,14 @@ def _extract_callbacks(task_id: str, task_transcriber=None) -> dict:
         # fire-and-forget update
         asyncio.create_task(_update_task(task_id, mode=mode, message=message or ""))
 
+    def _broadcast_stage_for_task(stage, pct=0, message=""):
+        return _broadcast_stage(task_id, stage, pct, message=message)
+
     return {
         "video_processor": video_processor,
         "transcriber": task_transcriber or transcriber,
         "temp_dir": TEMP_DIR,
-        "broadcast_stage": lambda stage, pct=0: _broadcast_stage(task_id, stage, pct),
+        "broadcast_stage": _broadcast_stage_for_task,
         "skip_stages": lambda names: _skip_task_stages(task_id, names),
         "set_mode": _set_mode,
         "is_audio_only": _is_audio_only,
@@ -474,7 +477,9 @@ async def process_upload_task(
             audio_path = await video_processor.normalize_local_media_to_m4a(saved_path, TEMP_DIR)
             await _broadcast_stage(task_id, "prepare_audio", 100)
             await _broadcast_stage(task_id, "transcribe", 50)
-            raw_script = await task_transcriber.transcribe(audio_path)
+            async def _report_transcribe_progress(pct: float):
+                await _broadcast_stage(task_id, "transcribe", message=f"{pct}%")
+            raw_script = await task_transcriber.transcribe(audio_path, progress_callback=_report_transcribe_progress)
             await _broadcast_stage(task_id, "transcribe", 100)
             # 归一化后的中间音频转录完即可删除，避免 TEMP_DIR 堆积。
             try:
@@ -518,7 +523,10 @@ async def run_download_task(task_id: str, url: str, do_download):
 
         await _broadcast_stage(task_id, "download", 10)
         output_path, extra_fields, success_message = await do_download(video_title)
+        output_path = Path(output_path)
         await _broadcast_stage(task_id, "download", 100)
+
+        file_size = output_path.stat().st_size if output_path.exists() else 0
 
         await _update_task(task_id,
             status="completed",
@@ -526,7 +534,8 @@ async def run_download_task(task_id: str, url: str, do_download):
             message=success_message,
             video_title=video_title,
             output_path=str(output_path),
-            filename=Path(output_path).name,
+            filename=output_path.name,
+            file_size=file_size,
             **extra_fields,
         )
 

@@ -102,7 +102,9 @@ async def extract_media_source(
     await broadcast_stage("prepare_audio", 100)
 
     await broadcast_stage("transcribe", 50)
-    raw_script = await transcriber.transcribe(audio_path)
+    async def _report_transcribe_progress(pct: float):
+        await broadcast_stage("transcribe", message=f"{pct}%")
+    raw_script = await transcriber.transcribe(audio_path, progress_callback=_report_transcribe_progress)
     await broadcast_stage("transcribe", 100)
 
     # 转录已完成，下载的中间音频不再需要，立即删除以免 TEMP_DIR 无限膨胀。

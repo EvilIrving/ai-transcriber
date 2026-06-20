@@ -268,8 +268,10 @@ async def set_task_stage(task_id: str, stage, stage_progress: float = 0):
     )
 
 
-async def broadcast_stage(task_id: str, stage, stage_progress: float = 0):
+async def broadcast_stage(task_id: str, stage, stage_progress: float = 0, message: str = ""):
     await set_task_stage(task_id, stage, stage_progress)
+    if message:
+        await update_task(task_id, message=message)
     task = await _db_get_task(task_id)
     if task:
         await broadcast_task_update(task_id, task)

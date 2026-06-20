@@ -4,7 +4,7 @@ import asyncio
 import threading
 import logging
 import concurrent.futures
-from typing import Optional
+from typing import Optional, Callable, Awaitable
 
 import cancellation
 from cancellation import CancelledByUser
@@ -131,7 +131,12 @@ class Transcriber:
             clip_timestamps=clip_timestamps if clip_timestamps else "0",
         )
 
-    async def transcribe(self, audio_path: str, language: Optional[str] = None) -> str:
+    async def transcribe(
+        self,
+        audio_path: str,
+        language: Optional[str] = None,
+        progress_callback: Optional[Callable[[float], Awaitable[None]]] = None,
+    ) -> str:
         """
         转录音频文件（定长分块 + 块间取消 + 原时间轴回映）。
 
@@ -195,26 +200,35 @@ class Transcriber:
                     dur = None
 
                 audio_array = await asyncio.to_thread(decode_audio_chunk, audio_path, start, dur)
-                if audio_array.size == 0:
-                    continue
 
                 # ── Silero 前置 VAD：切出语音段，转成 clip_timestamps 喂给 mlx ──
                 # mlx 据此只转语音、跳过静音（抑制幻觉/重复 + 提速），输出即原始时间轴。
                 # VAD 是质量增强而非硬依赖：失败时回退到整块直转，保证仍能出结果。
+                skip_mlx = audio_array.size == 0
                 clip = None
-                try:
-                    speech = await asyncio.to_thread(get_speech_timestamps, audio_array)
-                    if not speech:
-                        logger.info("块 %d（offset=%.0fs）无语音，跳过", idx, start)
-                        continue
-                    clip = to_clip_timestamps(speech, SAMPLE_RATE)
-                except Exception as e:  # onnxruntime/模型缺失等
-                    logger.warning("VAD 失败，回退整块转录: %s", e)
-                    clip = None
+                if not skip_mlx:
+                    try:
+                        speech = await asyncio.to_thread(get_speech_timestamps, audio_array)
+                        if not speech:
+                            logger.info("块 %d（offset=%.0fs）无语音，跳过", idx, start)
+                            skip_mlx = True
+                        else:
+                            clip = to_clip_timestamps(speech, SAMPLE_RATE)
+                    except Exception as e:  # onnxruntime/模型缺失等
+                        logger.warning("VAD 失败，回退整块转录: %s", e)
+                        clip = None
 
                 # MLX 转录必须与 _load_model 落在同一条线程上（见 _MLX_EXECUTOR 注释）。
-                result = await _run_on_mlx_thread(self._transcribe_chunk, audio_array, language, clip)
-                _collect(result, start)
+                if not skip_mlx:
+                    result = await _run_on_mlx_thread(self._transcribe_chunk, audio_array, language, clip)
+                    _collect(result, start)
+
+                # 分块进度上报：每块处理完后报告（含静音跳过/解码失败块，确保进度持续推进）。
+                if progress_callback and total_seconds and total_seconds > 0:
+                    is_last = idx == len(offsets) - 1
+                    covered = total_seconds if is_last else min(start + (dur or CHUNK_SECONDS), total_seconds)
+                    pct = min(99, max(0, round(covered / total_seconds * 100)))
+                    await progress_callback(float(pct))
 
             logger.info("转录完成，共 %d 段", len(segments))
             return self._assemble_markdown(detected_language, segments)
