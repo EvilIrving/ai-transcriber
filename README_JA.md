@@ -8,6 +8,6 @@
 
 **MediaBrief** は ai-transcriber の正式な後継プロダクトです（セルフホスト型の文字起こし + AI 要約）。
 
-👉 **新しいリポジトリ**：[github.com/EvilIrving/ai-transcribe](https://github.com/EvilIrving/ai-transcribe)
+👉 **新しいリポジトリ**：[github.com/EvilIrving/mediabrief](https://github.com/EvilIrving/mediabrief)
 
 Issue、PR、Star は新しいリポジトリでお願いします。本リポジトリはリダイレクト用のアーカイブであり、メンテナンスは行いません。
