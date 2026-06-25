@@ -1,4 +1,0 @@
-# 仅开发/测试用依赖（不进入打包构建）。
-# 安装：pip install -r requirements.txt -r requirements-dev.txt
-pytest>=9.0
-pytest-asyncio>=0.24
